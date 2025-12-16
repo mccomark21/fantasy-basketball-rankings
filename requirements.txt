@@ -1,0 +1,4 @@
+polars
+numpy
+nicegui
+nba_api
