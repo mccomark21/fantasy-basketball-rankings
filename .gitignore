@@ -2,6 +2,7 @@ __pycache__/
 .ipynb_checkpoints/
 .env
 .venv
+venv
 data/raw/*
 data/processed/*
 !data/raw/.gitkeep
