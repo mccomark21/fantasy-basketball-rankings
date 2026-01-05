@@ -15,7 +15,7 @@ def ingest() -> None:
 
 
 # TODO: Replace with nba_api pull
-df = pl.read_csv('example_stats.csv')
+    df = pl.read_csv('data/raw/example_stats.csv')
 
 
 DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -25,4 +25,4 @@ df.write_parquet(DATA_PATH)
 
 
 if __name__ == '__main__':
-ingest()
+    ingest()

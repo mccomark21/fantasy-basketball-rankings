@@ -6,7 +6,7 @@ from src.config import DEFAULT_WEIGHTS
 
 def add_z_scores(df: pl.DataFrame, columns: list[str]) -> pl.DataFrame:
 # Add z-score columns for the provided stats.
-return df.with_columns([
+    return df.with_columns([
 ((pl.col(c) - pl.col(c).mean()) / pl.col(c).std())
 .alias(f'{c}_Z')
 for c in columns
@@ -24,7 +24,7 @@ weights: dict = DEFAULT_WEIGHTS,
 # impact metrics (FG_IMPACT, FT_IMPACT).
 
 
-df = add_z_scores(stats_df, list(weights.keys()))
+    df = add_z_scores(stats_df, list(weights.keys()))
 
 
 df = df.with_columns([
