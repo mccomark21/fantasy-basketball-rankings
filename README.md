@@ -109,8 +109,7 @@ The scripts make these files. Do not edit them. Git does not track them.
 |---|---|
 | [`docs/category_weights.md`](docs/category_weights.md) | How the category weights were calculated. |
 | [`tests/`](tests/) | Tests for `valuation.py` and `draft_board.py`. See [Tests](#tests). |
-| `.scratch/draft_board_ideas.md` | Backlog of draft board ideas and the league facts. Nothing in it is built yet. Local only: git does not track `.scratch/`. |
-| `.scratch/architecture_issues/` | Specs for refactors from the architecture review of 2026-10-04, with the order to do them in. Local only. |
+| [GitHub issues](https://github.com/mccomark21/fantasy-basketball-rankings/issues) | Planned features for the draft board and refactors from the architecture review. Each issue has its priority and the issues it depends on. |
 
 ## Where to make a change
 
@@ -124,7 +123,7 @@ The scripts make these files. Do not edit them. Git does not track them.
 | Fix a player with no team | `data/team_overrides.csv` |
 | Fix a player with no Yahoo data | `data/yahoo_names.csv` |
 | Read why the weights have their values | [`docs/category_weights.md`](docs/category_weights.md) |
-| Find the next thing to build | `.scratch/` (local only) |
+| Find the next thing to build | [GitHub issues](https://github.com/mccomark21/fantasy-basketball-rankings/issues) |
 
 ## Reference
 
