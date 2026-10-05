@@ -1,9 +1,8 @@
+# Python
 __pycache__/
-.ipynb_checkpoints/
-.env
-.venv
-venv
-data/raw/*
-data/processed/*
-!data/raw/.gitkeep
-!data/processed/.gitkeep
+*.pyc
+.pytest_cache/
+
+# Data and generated output (not shared)
+*.csv
+output/

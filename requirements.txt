@@ -1,6 +1,0 @@
-polars
-pyarrow
-matplotlib
-numpy
-nicegui
-nba_api

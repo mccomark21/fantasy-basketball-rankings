@@ -1,0 +1,73 @@
+# Settings for the scripts in scripts/. Change a value, then run: python scripts/rankings.py
+
+[league]
+teams = 14
+roster_spots = 10          # 6 starters (PG, SG, SF, PF, C, Util) + 4 bench; the player pool is teams x roster_spots
+projections = "data/Projections.csv"
+espn_season = 2027         # ESPN uses the year that the season ends
+
+# Weight for each category z-score. See docs/category_weights.md.
+# Punted categories (FG%, FT%, TO) are not in this list.
+[weights]
+pts = 1.00
+reb = 1.00
+ast = 1.00
+threes = 0.70
+blk = 0.65
+stl = 0.50
+
+[games]
+# Games played is a multiplier on per-game value above replacement:
+#   availability = (projected games / full_season) ^ power
+# power = 0   : rank by per-game value only
+# power = 1   : value is proportional to total games (season-total value)
+# power > 1   : more penalty for missed games
+full_season = 82
+power = 1.25
+
+[playoffs]
+# The playoff schedule does not change the rankings. These settings make the schedule
+# columns in rankings.csv, playoff_schedule.csv and the draft board flags.
+
+# Fantasy playoff weeks (Monday to Sunday).
+weeks = [
+  { name = "wk19", start = 2027-03-08, end = 2027-03-14 },
+  { name = "wk20", start = 2027-03-15, end = 2027-03-21 },
+  { name = "wk21", start = 2027-03-22, end = 2027-03-28 },
+]
+
+# Value of one playoff week for each number of games, relative to a 3-game week.
+# A linear scale is 2 = 0.67 and 4 = 1.33. These values make 2-game weeks
+# hurt more and 4-game weeks help more.
+[playoffs.week_value]
+0 = 0.00
+1 = 0.25
+2 = 0.50
+3 = 1.00
+4 = 1.40
+5 = 1.60
+
+# Quality games: games on low-volume days. If your core players play on these days,
+# you can stream on high-volume days, when more free agents play.
+[quality_games]
+max_games_per_day = 6      # a day with this number of NBA games or fewer is a low-volume day
+# Value added to a playoff week for each quality game in that week.
+# For comparison, a 4-game week adds 0.40 over a 3-game week.
+bonus = 0.10
+
+# Settings for draft_board.py (writes draft_board.md and draft_board.html from rankings.csv)
+[board]
+low_games = 60             # mark players projected for fewer games than this
+tiers = [20, 40, 60]       # last rank in each tier (Markdown only). The last tier holds all other players.
+
+# Flags: green = good, gray = average, yellow = poor.
+# S = playoff games: green at good_playoff_games or more, yellow at poor_playoff_games or fewer.
+# Q = quality games: green at good_quality_games or more, yellow at poor_quality_games or fewer.
+# A red X replaces the S and Q flags when the player has a playoff week with avoid_week_games games or fewer.
+# Set avoid_week_games = 0 to turn off the X.
+[flags]
+good_playoff_games = 11
+poor_playoff_games = 9
+good_quality_games = 3
+poor_quality_games = 1
+avoid_week_games = 2
