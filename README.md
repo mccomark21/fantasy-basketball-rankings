@@ -1,29 +1,45 @@
-# Fantasy basketball rankings
+# Fantasy Basketball Rankings
 
-Welcome. This project makes custom player rankings and an auction draft board for one fantasy basketball league for the 2026-27 season.
+Custom player rankings and an auction draft board for one Yahoo fantasy basketball league, 2026-27 season.
 
-The league is a Yahoo head-to-head league with 14 teams and a $200 auction draft. It counts 9 categories. Our strategy punts 3 of them: FG%, FT% and TO. Public rankings value all 9 categories, so they do not fit this strategy. These scripts rank players on only the 6 categories that we try to win: PTS, REB, AST, 3PM, BLK and STL.
+Public rankings value all 9 categories. This league's strategy punts 3 of them, so public rankings do not fit it. These scripts rank players on only the 6 categories that the strategy tries to win.
 
-The scripts also look at the fantasy playoff weeks (weeks 19 to 21). They count the games that each player's team plays in those weeks. This data does not change the rankings. It shows on the draft board as flags, so you can see it when two players are close.
+## Table of contents
 
-## Contents
+- [Overview](#overview)
+- [Pipeline](#pipeline)
+- [Getting started](#getting-started)
+- [Configuration](#configuration)
+- [Project structure](#project-structure)
+- [Common tasks](#common-tasks)
+- [Methodology](#methodology)
+- [Output reference](#output-reference)
+- [Data maintenance](#data-maintenance)
+- [Troubleshooting](#troubleshooting)
+- [Testing](#testing)
+- [Roadmap](#roadmap)
 
-- [How it works](#how-it-works)
-- [Quick start](#quick-start)
-- [Map of the repo](#map-of-the-repo)
-- [Where to make a change](#where-to-make-a-change)
-- [Reference](#reference)
-  - [Method](#method)
-  - [Output columns](#output-columns)
-  - [Schedule score](#schedule-score)
-  - [Quality games](#quality-games)
-  - [Yahoo data](#yahoo-data)
-  - [When a player has no team](#when-a-player-has-no-team)
-  - [Tests](#tests)
+## Overview
 
-## How it works
+### League format
 
-The scripts run in a chain. Each script reads the files that the scripts before it wrote.
+| Setting | Value |
+|---|---|
+| Platform | Yahoo, head-to-head |
+| Teams | 14 |
+| Draft | Auction, $200 budget |
+| Categories | 9 |
+| Punted categories | FG%, FT%, TO |
+| Ranked categories | PTS, REB, AST, 3PM, BLK, STL |
+| Fantasy playoffs | Weeks 19 to 21 |
+
+### Playoff schedule
+
+The scripts count the games that each player's NBA team plays in the fantasy playoff weeks. This data does not change the rankings. The draft board shows it as flags, so you can use it to choose between two players with close values.
+
+## Pipeline
+
+The scripts run in sequence. Each script reads the files that the earlier scripts wrote.
 
 ```
 data/Projections.csv ──┐
@@ -31,170 +47,221 @@ ESPN (fetch_data.py) ──┼──> rankings.py ──> output/rankings.csv �
 Yahoo (fetch_yahoo.py) ┘                    output/playoff_schedule.csv                 output/draft_board.md
 ```
 
-1. `fetch_data.py` downloads NBA rosters and the schedule from ESPN.
-2. `fetch_yahoo.py` downloads Yahoo positions, auction prices and ADP.
-3. `rankings.py` gives each player a value from the projections and `config.toml`. It writes the rankings and the playoff schedule.
-4. `draft_board.py` turns the rankings into a sortable draft board for use during the draft.
+| Step | Script | Result |
+|---|---|---|
+| 1 | `fetch_data.py` | Downloads NBA rosters and the schedule from ESPN. |
+| 2 | `fetch_yahoo.py` | Downloads Yahoo positions, auction prices and ADP. |
+| 3 | `rankings.py` | Gives each player a value from the projections and `config.toml`. Writes the rankings and the playoff schedule. |
+| 4 | `draft_board.py` | Turns the rankings into a sortable draft board for use during the draft. |
 
-## Quick start
+## Getting started
 
-Requires Python 3.11 or later.
+### Prerequisites
 
-Install the packages once:
+- Python 3.11 or later. The scripts use `tomllib`.
+- A season projections file. Git does not track CSV files, so a new clone of the repo does not include it.
 
-```
-python -m pip install -r requirements.txt
-python -m playwright install chromium
-```
+### Installation
 
-Put the season projections in `data/Projections.csv`. Git does not track CSV files, so a new copy of the repo does not have this file.
+1. Install the Python packages:
+
+   ```
+   python -m pip install -r requirements.txt
+   ```
+
+2. Install the browser that `fetch_yahoo.py` uses:
+
+   ```
+   python -m playwright install chromium
+   ```
+
+3. Put the season projections in `data/Projections.csv`.
+
+### Usage
 
 Run the scripts in this order:
 
 ```
-python scripts/fetch_data.py   # download rosters and schedule (do again after trades)
-python scripts/fetch_yahoo.py  # download Yahoo positions, auction prices and ADP
-python scripts/rankings.py     # write output/rankings.csv and output/playoff_schedule.csv
-python scripts/draft_board.py  # write output/draft_board.md and output/draft_board.html
+python scripts/fetch_data.py   # Download rosters and schedule. Run again after trades.
+python scripts/fetch_yahoo.py  # Download Yahoo positions, auction prices and ADP.
+python scripts/rankings.py     # Write output/rankings.csv and output/playoff_schedule.csv.
+python scripts/draft_board.py  # Write output/draft_board.md and output/draft_board.html.
 ```
 
 Open `output/draft_board.html` in a browser.
 
-## Map of the repo
+## Configuration
 
-### Settings and setup
+All settings are in [`config.toml`](config.toml). To apply a change, run the scripts again.
 
-| File | Use |
+| Section | Controls |
 |---|---|
-| [`config.toml`](config.toml) | All settings: league size, category weights, games played, playoff weeks, quality games, draft board and flags. Change a value, then run the scripts again. |
-| [`requirements.txt`](requirements.txt) | Python packages. |
+| `[league]` | League size, roster spots, the projections file and the ESPN season. |
+| `[weights]` | The weight of each ranked category. See [`docs/category_weights.md`](docs/category_weights.md). |
+| `[games]` | The penalty for missed games. See [Valuation](#valuation). |
+| `[playoffs]` | The playoff weeks and the value of each week by number of games. |
+| `[quality_games]` | The low-volume day limit and the bonus for each quality game. |
+| `[board]` | The low-games mark and the tiers in the Markdown board. |
+| `[flags]` | The limits that make a draft board flag green, gray, yellow or a red X. |
 
-### Scripts
+## Project structure
 
-| File | Use |
+```
+config.toml               All settings
+requirements.txt          Python packages
+scripts/
+  fetch_data.py           Downloads data/rosters.csv and data/schedule.csv from ESPN
+  fetch_yahoo.py          Downloads data/yahoo_players.csv from the public Yahoo draft analysis pages
+  rankings.py             Writes output/rankings.csv and output/playoff_schedule.csv
+  valuation.py            Calculates the value of each player (used by rankings.py)
+  draft_board.py          Writes output/draft_board.html and output/draft_board.md
+  common.py               Shared helpers: paths, config, playoff weeks, positions and names
+data/                     Inputs (not tracked by Git)
+output/                   Generated files (not tracked by Git)
+docs/
+  category_weights.md     How the category weights were calculated
+tests/                    Tests for valuation.py and draft_board.py
+```
+
+### Data files
+
+| File | Purpose | Edit by hand |
+|---|---|---|
+| `data/Projections.csv` | Season projections. Replace the file when projections change. | Yes |
+| `data/team_overrides.csv` | ESPN name fixes (`espn_name`) or a fixed team (`team`) for each player. | Yes |
+| `data/yahoo_names.csv` | The Yahoo name (`yahoo_name`) for each player whose name is different on Yahoo. | Yes |
+| `data/rosters.csv`, `data/schedule.csv` | ESPN data from `fetch_data.py`. | No |
+| `data/yahoo_players.csv` | Yahoo data from `fetch_yahoo.py`. | No |
+
+### Output files
+
+The scripts write these files. Do not edit them.
+
+| File | Contents |
 |---|---|
-| [`scripts/fetch_data.py`](scripts/fetch_data.py) | Downloads `data/rosters.csv` and `data/schedule.csv` from ESPN. |
-| [`scripts/fetch_yahoo.py`](scripts/fetch_yahoo.py) | Downloads `data/yahoo_players.csv` from the public Yahoo draft analysis pages. |
-| [`scripts/rankings.py`](scripts/rankings.py) | Writes `output/rankings.csv` and `output/playoff_schedule.csv`. |
-| [`scripts/valuation.py`](scripts/valuation.py) | Calculates the value of each player. `rankings.py` uses it. See [Method](#method). |
-| [`scripts/draft_board.py`](scripts/draft_board.py) | Writes `output/draft_board.html` and `output/draft_board.md`. |
-| [`scripts/common.py`](scripts/common.py) | Paths, config, playoff-week, position and name helpers that more than one script uses. |
+| `output/rankings.csv` | Player rankings. See [rankings.csv](#rankingscsv). |
+| `output/playoff_schedule.csv` | Playoff days for each team. See [playoff_schedule.csv](#playoff_schedulecsv). |
+| `output/draft_board.html` | The Playoff Draft Board: one sortable table of all players in the projections, with Yahoo positions and S, Q and X flags. Open it in a browser. |
+| `output/draft_board.md` | The Playoff Draft Board as Markdown. |
 
-### Data (`data/`)
+## Common tasks
 
-Git does not track these files.
-
-| File | Use |
-|---|---|
-| `data/Projections.csv` | Season projections. Replace this file when projections change. |
-| `data/team_overrides.csv` | Name fixes (`espn_name`) or a set team (`team`) for each player. See [When a player has no team](#when-a-player-has-no-team). |
-| `data/yahoo_names.csv` | Yahoo name (`yahoo_name`) for each player whose name is different on Yahoo. |
-| `data/rosters.csv`, `data/schedule.csv` | Downloaded from ESPN by `fetch_data.py`. Do not edit. |
-| `data/yahoo_players.csv` | Downloaded from Yahoo by `fetch_yahoo.py`. Do not edit. See [Yahoo data](#yahoo-data). |
-
-### Output (`output/`)
-
-The scripts make these files. Do not edit them. Git does not track them.
-
-| File | Use |
-|---|---|
-| `output/rankings.csv` | Player rankings. See [Output columns](#output-columns). |
-| `output/playoff_schedule.csv` | Playoff days for each team. Q = quality game, x = other game. The number in each column name is the number of NBA games that day. |
-| `output/draft_board.html` | Playoff Draft Board: one sortable table of all players in the projections, with Yahoo positions and S, Q and X flags. Open in a browser. |
-| `output/draft_board.md` | Playoff Draft Board as Markdown. |
-
-### Docs, tests and notes
-
-| File | Use |
-|---|---|
-| [`docs/category_weights.md`](docs/category_weights.md) | How the category weights were calculated. |
-| [`tests/`](tests/) | Tests for `valuation.py` and `draft_board.py`. See [Tests](#tests). |
-| [GitHub issues](https://github.com/mccomark21/fantasy-basketball-rankings/issues) | Planned features for the draft board and refactors from the architecture review. Each issue has its priority and the issues it depends on. |
-
-## Where to make a change
-
-| To do this | Go to |
+| Task | Location |
 |---|---|
 | Change a category weight, the games-played penalty or the playoff weeks | [`config.toml`](config.toml) |
-| Change when a draft board flag is green, gray, yellow or a red X | `[flags]` in [`config.toml`](config.toml) |
+| Change the limits for draft board flags | `[flags]` in [`config.toml`](config.toml) |
 | Change how player value is calculated | [`scripts/valuation.py`](scripts/valuation.py) |
 | Add a column to the rankings | [`scripts/rankings.py`](scripts/rankings.py) |
-| Change the look or the columns of the draft board | [`scripts/draft_board.py`](scripts/draft_board.py) |
-| Fix a player with no team | `data/team_overrides.csv` |
-| Fix a player with no Yahoo data | `data/yahoo_names.csv` |
+| Change the layout or the columns of the draft board | [`scripts/draft_board.py`](scripts/draft_board.py) |
+| Fix a player with no team | `data/team_overrides.csv`. See [Players with no team](#players-with-no-team). |
+| Fix a player with no Yahoo data | `data/yahoo_names.csv`. See [Yahoo name differences](#yahoo-name-differences). |
 | Read why the weights have their values | [`docs/category_weights.md`](docs/category_weights.md) |
-| Find the next thing to build | [GitHub issues](https://github.com/mccomark21/fantasy-basketball-rankings/issues) |
+| Find planned work | [GitHub issues](https://github.com/mccomark21/fantasy-basketball-rankings/issues) |
 
-## Reference
+## Methodology
 
-### Method
+### Valuation
 
-1. **Per-game value:** the weighted per-game z-scores. The pool is the top 140 players (14 × 10).
-2. **Value above replacement:** per-game value minus the average of the next 14 players.
-3. **Final value:** value above replacement × (games / 82) ^ `games.power`.
+`valuation.py` calculates the value of each player in 3 steps:
+
+1. **Per-game value.** The sum of the weighted per-game z-scores. The player pool is the top 140 players (14 teams × 10 roster spots).
+2. **Value above replacement.** The per-game value minus the average of the next 14 players.
+3. **Final value.** The value above replacement × (games / 82) ^ `games.power`.
+
+For a player below replacement level, the final value is the per-game value above replacement. This rule stops missed games from making a below-replacement player look better.
 
 The playoff schedule does not change the final value. The schedule columns and the draft board flags are for information only.
 
-For a player below replacement level, the final value is the per-game value above replacement. Missed games do not make the player look better.
-
-### Output columns
-
-Columns of `output/rankings.csv`:
-
-- `rank`: final rank. `pg_rank`: rank by per-game value only.
-- `pos`: Yahoo positions, for example `PG/SG`. — = not in the Yahoo data.
-- `wk19`, `wk20`, `wk21`: games in each playoff week. `playoff_games`: total.
-- `q_wk19`, `q_wk20`, `q_wk21`: quality games in each playoff week. `quality_games`: total. `q_season`: quality games in the full season.
-- `sched_score`, `sched_rank`: playoff schedule score of the team, and its rank from 1 to 30.
-- `pg_value`, `value`: per-game value and final value. `z_*`: z-score for each category.
-
 ### Schedule score
 
-The schedule score of a team is the average of its playoff week values:
+The schedule score of a team is the average of its playoff week values.
 
-- Week value = `playoffs.week_value` for the number of games + `quality_games.bonus` × quality games that week.
-- The average is then divided by the league average, so 1.00 = an average playoff schedule. In 2026-27, the scores are from 0.78 (CLE) to 1.20 (PHX).
-- The score does not change the rankings.
+- Week value = `playoffs.week_value` for the number of games + `quality_games.bonus` × the number of quality games in that week.
+- The scripts divide the average by the league average, so 1.00 is an average playoff schedule.
+- In 2026-27, the scores go from 0.78 (CLE) to 1.20 (PHX).
 
-`playoff_schedule.csv` shows the score and rank of each team.
+The score does not change the rankings.
 
 ### Quality games
 
-A quality game is a game on a low-volume day (`quality_games.max_games_per_day` NBA games or fewer).
-If your core players play on these days, you can use your adds (5 each week) on high-volume days, when more free agents play.
+A quality game is a game on a low-volume day. A low-volume day has `quality_games.max_games_per_day` NBA games or fewer.
 
-### Yahoo data
+If your core players play on low-volume days, you can use your adds (5 each week) on high-volume days, when more free agents play.
 
-`fetch_yahoo.py` uses Playwright. `requirements.txt` installs it. The Chromium step in [Quick start](#quick-start) installs the browser.
-On this PC, `greenlet` 3.5 is blocked by Windows Application Control. Use `python -m pip install greenlet==3.1.1`.
+## Output reference
 
-The data comes from all Yahoo leagues, not only our league. Our league pages need a Yahoo login, so the script does not read them.
+### rankings.csv
 
-Columns of `yahoo_players.csv`:
+| Column | Description |
+|---|---|
+| `rank` | Final rank. |
+| `pg_rank` | Rank by per-game value only. |
+| `pos` | Yahoo positions, for example `PG/SG`. `—` means the player is not in the Yahoo data. |
+| `wk19`, `wk20`, `wk21` | Games in each playoff week. |
+| `playoff_games` | Total games in the playoff weeks. |
+| `q_wk19`, `q_wk20`, `q_wk21` | Quality games in each playoff week. |
+| `quality_games` | Total quality games in the playoff weeks. |
+| `q_season` | Quality games in the full season. |
+| `sched_score` | The playoff schedule score of the player's team. |
+| `sched_rank` | The rank of that schedule score, from 1 to 30. |
+| `pg_value` | Per-game value. |
+| `value` | Final value. |
+| `z_*` | The z-score for each category. |
 
-- `yahoo_id`, `name`, `team`: Yahoo player ID, name and team (Yahoo abbreviations, for example `NYK`, `GSW`, `SAS`).
-- `positions`: Yahoo positions, for example `PG,SG`.
-- `status`: injury status (`Q`, `O`, `P`, `NA`). Empty = healthy.
-- `yahoo_rank`: Yahoo preseason rank.
-- `pct_drafted`: percent of Yahoo auction drafts that took the player.
-- `yahoo_cost`: average price in Yahoo auction drafts ($200 budget).
-- `yahoo_value`: Yahoo projected auction value.
-- `adp`: average pick in Yahoo snake drafts. Empty when the player has no ADP.
+### playoff_schedule.csv
 
-Some names are different on Yahoo, for example Alex Sarr, Nic Claxton, Cameron Johnson, Herbert Jones and Luguentz Dort.
-`draft_board.py` matches names without accents, punctuation or suffixes (Jr., III). For other differences, add the player to `data/yahoo_names.csv`.
+Each row is a team. Each day column shows `Q` for a quality game and `x` for a different game. The number in each column name is the number of NBA games on that day. The file also shows the schedule score and rank of each team.
 
-### When a player has no team
+### yahoo_players.csv
+
+The data comes from all Yahoo leagues, not only this league. The league's own pages need a Yahoo login, so the script does not read them.
+
+| Column | Description |
+|---|---|
+| `yahoo_id` | Yahoo player ID. |
+| `name` | Player name. |
+| `team` | Team, as a Yahoo abbreviation, for example `NYK`, `GSW`, `SAS`. |
+| `positions` | Yahoo positions, for example `PG,SG`. |
+| `status` | Injury status: `Q`, `O`, `P` or `NA`. Empty means healthy. |
+| `yahoo_rank` | Yahoo preseason rank. |
+| `pct_drafted` | Percent of Yahoo auction drafts that took the player. |
+| `yahoo_cost` | Average price in Yahoo auction drafts ($200 budget). |
+| `yahoo_value` | Yahoo projected auction value. |
+| `adp` | Average pick in Yahoo snake drafts. Empty when the player has no ADP. |
+
+## Data maintenance
+
+### Players with no team
 
 `rankings.py` prints a list of players with no team. Add each player to `data/team_overrides.csv`:
 
-- Different name on ESPN: put the ESPN name in `espn_name`.
-- Free agent or other case: put the team abbreviation in `team` (ESPN style, for example `GS`, `NY`, `SA`).
+- If the name is different on ESPN, put the ESPN name in `espn_name`.
+- For a free agent or a different case, put the team abbreviation in `team`. Use ESPN abbreviations, for example `GS`, `NY`, `SA`.
 
-### Tests
+### Yahoo name differences
+
+Some names are different on Yahoo, for example Alex Sarr, Nic Claxton, Cameron Johnson, Herbert Jones and Luguentz Dort.
+
+`draft_board.py` matches names without accents, punctuation or suffixes such as Jr. and III. For a different mismatch, add the player to `data/yahoo_names.csv`.
+
+## Troubleshooting
+
+### greenlet is blocked on Windows
+
+`fetch_yahoo.py` uses Playwright, which needs `greenlet`. On the development PC, Windows Application Control blocks `greenlet` 3.5. Install an earlier version:
+
+```
+python -m pip install greenlet==3.1.1
+```
+
+## Testing
 
 ```
 python -m pytest
 ```
 
 The tests are in `tests/`. They cover `valuation.py` and the filter bar of `draft_board.py`.
+
+## Roadmap
+
+Planned work is in [GitHub issues](https://github.com/mccomark21/fantasy-basketball-rankings/issues). The issues include draft board features and refactors from the architecture review. Each issue shows its priority and the issues it depends on.
