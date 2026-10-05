@@ -4,6 +4,13 @@ Custom rankings for a 14-team, 6-category H2H league (punt FG%, FT%, TO).
 
 ## Run
 
+Requires Python 3.11 or later. Install the packages once:
+
+```
+python -m pip install -r requirements.txt
+python -m playwright install chromium
+```
+
 ```
 python scripts/fetch_data.py   # download rosters and schedule (do again after trades)
 python scripts/fetch_yahoo.py  # download Yahoo positions, auction prices and ADP
@@ -47,7 +54,7 @@ For a player below replacement level, the final value is the per-game value abov
 
 ## Yahoo data
 
-`fetch_yahoo.py` uses Playwright. Install it once: `python -m pip install playwright`, then `python -m playwright install chromium`.
+`fetch_yahoo.py` uses Playwright. `requirements.txt` installs it. The Chromium step in Run installs the browser.
 On this PC, `greenlet` 3.5 is blocked by Windows Application Control. Use `python -m pip install greenlet==3.1.1`.
 
 The data comes from all Yahoo leagues, not only our league. Our league pages need a Yahoo login, so the script does not read them.
