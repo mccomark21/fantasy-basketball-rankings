@@ -90,6 +90,7 @@ python scripts/rankings.py     # Write output/rankings.csv and output/playoff_sc
 python scripts/draft_board.py  # Write output/draft_board.md and output/draft_board.html.
 python scripts/publish.py      # Optional. Put the board on GitHub Pages.
 python scripts/auction.py      # Optional. Simulate the auction for each keeper candidate.
+python scripts/report.py       # Optional. Write the keeper report page from the simulator results.
 ```
 
 Open `output/draft_board.html` in a browser.
@@ -148,6 +149,7 @@ scripts/
   team_score.py           Playoff score of a roster: daily lineups and streamers in weeks 19 to 21
   matchups.py             Playoff face-offs: round robin and bracket of the top teams
   sim_results.py          Player and group tables from the simulator runs
+  report.py               Writes output/keeper_report.html from the simulator results
   common.py               Shared helpers: paths, config, playoff week names and names
 data/                     Inputs (not tracked by Git)
 output/                   Generated files (not tracked by Git)
@@ -178,6 +180,7 @@ The scripts write these files. Do not edit them.
 | `output/simulation_summary.csv` | The auction simulator: one row for each keeper (title %, playoff results, playoff score, dollars). |
 | `output/simulation_players.csv` | The auction simulator: for each keeper, the players in your core, how often, the lowest, median and highest price that you pay, and the lift (title % with the player − without him). |
 | `output/simulation_groups.csv` | The auction simulator: groups of 2 to 4 players in your core, with your title %, its standard error and the low end (title % − 2 × error). |
+| `output/keeper_report.html` | The keeper report: title % for each keeper, the top 5 groups of 3 or 4, the best roster and the players in your core. Open it in a browser. |
 | `output/simulation_runs.csv` | The auction simulator: one row for each player that you buy in each auction, with the results of that auction. |
 
 ## Common tasks
