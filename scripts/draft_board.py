@@ -1,17 +1,14 @@
 """Write the Playoff Draft Board: draft_board.md and draft_board.html.
 
-The board is one table of all players in rankings.csv, sorted by rank ([board] in config.toml).
+The board is one table of all players from build_rankings() in rankings.py, sorted by rank ([board] in config.toml).
 Each player gets an S flag (playoff games) and a Q flag (quality games): green = good, gray = average,
 yellow = poor. A short playoff week shows a red X in place of both flags ([flags] in config.toml).
-The stat columns are the categories in [weights]. Positions come from rankings.csv.
-Run rankings.py first.
+The stat columns are the categories in [weights]. Positions are the Yahoo positions.
 """
 from datetime import date
 
-import pandas as pd
-
 from common import OUT, load_config, weeks
-from playoffs import join_teams, playoff_schedule, read_schedule, schedule_columns
+from rankings import build_rankings
 
 TITLE = "Playoff Draft Board"
 # Column label for a category. A category that is not here uses its name in capitals.
@@ -26,8 +23,7 @@ def categories(cfg):
 
 def load(cfg):
     t, f = cfg["board"], cfg["flags"]
-    df = pd.read_csv(OUT / "rankings.csv").drop(columns=schedule_columns(cfg))
-    df = join_teams(df, playoff_schedule(read_schedule(), cfg)[0], cfg)
+    df = build_rankings(cfg)
     # A player with no team has no playoff schedule, so the player gets no flags
     df["no_team"] = df.team.isna()
     df["team"] = df.team.fillna("—")

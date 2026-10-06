@@ -2,7 +2,7 @@
 
 valuation.py calculates the value of each player (z-scores, replacement level, games played).
 The playoff schedule does not change the value. The schedule columns are for information only.
-Output: rankings.csv
+Output: rankings.csv. draft_board.py calls build_rankings() to get all the columns.
 """
 import pandas as pd
 
@@ -35,24 +35,35 @@ def load_players(cfg):
     return df.join(links)
 
 
-def main():
-    cfg = load_config()
-    OUT.mkdir(exist_ok=True)
-    df = load_players(cfg)
+def build_rankings(cfg, teams=None):
+    """All players with every column (value, z-scores, team schedule), sorted by value.
 
-    teams, days = playoff_schedule(read_schedule(), cfg)
-    schedule_grid(teams, days).to_csv(OUT / "playoff_schedule.csv", index_label="team")
-    df = join_teams(df, teams, cfg)
+    The values are not rounded.
 
-    df = value_players(df, cfg)
-    pool_size = cfg["league"]["teams"] * cfg["league"]["roster_spots"]
+    teams is the team table from playoff_schedule(). If it is None, this function reads the schedule.
+    rankings.csv has some of these columns. draft_board.py gets all of them.
+    """
+    if teams is None:
+        teams = playoff_schedule(read_schedule(), cfg)[0]
+    df = value_players(join_teams(load_players(cfg), teams, cfg), cfg)
     df = df.sort_values("value", ascending=False).reset_index(drop=True)
     df.insert(0, "rank", df.index + 1)
     df["pg_rank"] = df.pg_value.rank(ascending=False).astype(int)
+    return df
+
+
+def main():
+    cfg = load_config()
+    OUT.mkdir(exist_ok=True)
+    teams, days = playoff_schedule(read_schedule(), cfg)
+    schedule_grid(teams, days).to_csv(OUT / "playoff_schedule.csv", index_label="team")
+
+    df = build_rankings(cfg, teams)
     cols = (["rank", "pg_rank", "name", "team", "pos", "games", "mpg", *STATS, *schedule_columns(cfg),
              "pg_value", "value"] + ["z_" + c for c in cfg["weights"]] + ["player_id"])
     df[cols].round(2).to_csv(OUT / "rankings.csv", index=False)
 
+    pool_size = cfg["league"]["teams"] * cfg["league"]["roster_spots"]
     top = df[df["rank"] <= pool_size + 50]
     for col, message in [("team", "No team found (add espn_name or team to data/name_overrides.csv):"),
                          ("yahoo_id", "No Yahoo data found (add yahoo_name to data/name_overrides.csv):")]:

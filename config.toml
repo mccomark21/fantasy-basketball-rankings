@@ -55,7 +55,7 @@ max_games_per_day = 6      # a day with this number of NBA games or fewer is a l
 # For comparison, a 4-game week adds 0.40 over a 3-game week.
 bonus = 0.10
 
-# Settings for draft_board.py (writes draft_board.md and draft_board.html from rankings.csv)
+# Settings for draft_board.py (writes draft_board.md and draft_board.html)
 [board]
 low_games = 60             # mark players projected for fewer games than this
 tiers = [20, 40, 60]       # last rank in each tier (Markdown only). The last tier holds all other players.

@@ -39,12 +39,14 @@ The scripts count the games that each player's NBA team plays in the fantasy pla
 
 ## Pipeline
 
-The scripts run in sequence. Each script reads the files that the earlier scripts wrote.
+The scripts run in sequence. The fetch scripts write the files in `data/`. `rankings.py` reads them.
+`draft_board.py` calls `build_rankings()` in `rankings.py`. It does not read `rankings.csv`.
 
 ```
 data/Projections.csv ──┐
-ESPN (fetch_data.py) ──┼──> rankings.py ──> output/rankings.csv ──> draft_board.py ──> output/draft_board.html
-Yahoo (fetch_yahoo.py) ┘                    output/playoff_schedule.csv                 output/draft_board.md
+ESPN (fetch_data.py) ──┼──> rankings.py ──> output/rankings.csv, output/playoff_schedule.csv
+Yahoo (fetch_yahoo.py) ┘        │
+                                └──> draft_board.py ──> output/draft_board.html, output/draft_board.md
 ```
 
 | Step | Script | Result |
@@ -260,7 +262,7 @@ python -m pip install greenlet==3.1.1
 python -m pytest
 ```
 
-The tests are in `tests/`. They cover `valuation.py`, `identity.py`, `playoffs.py` and the filter bar of `draft_board.py`.
+The tests are in `tests/`. They cover `valuation.py`, `identity.py`, `playoffs.py` and two parts of `draft_board.py`: the data load and the filter bar.
 
 ## Roadmap
 

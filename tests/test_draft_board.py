@@ -5,12 +5,31 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+import draft_board  # noqa: E402
 from draft_board import filter_bar  # noqa: E402
 
 DF = pd.DataFrame({
     "team": ["NYK", "BOS", "—", "BOS"],
     "pos": ["C", "SF/PF", "—", "PG/SG"],
 })
+
+
+def test_board_gets_every_column_from_build_rankings(monkeypatch):
+    cfg = {"weights": {"pts": 1.0},
+           "board": {"low_games": 60},
+           "flags": {"good_playoff_games": 11, "poor_playoff_games": 9,
+                     "good_quality_games": 3, "poor_quality_games": 1}}
+    players = pd.DataFrame({
+        "name": ["A", "B"], "team": ["BOS", None], "games": [70, 50], "pts": [20.0, 10.0],
+        "playoff_games": [11, 0], "quality_games": [1, 0], "short_weeks": ["", ""],
+        "dollars": [40.123456, 1.0],  # a new column that the board does not use yet
+    })
+    monkeypatch.setattr(draft_board, "build_rankings", lambda c: players.copy())
+
+    df = draft_board.load(cfg)
+    assert df.dollars.tolist() == [40.123456, 1.0]  # the board gets the new column, not rounded
+    assert df.team.tolist() == ["BOS", "—"]
+    assert df.player.tolist() == ["A", "B ⚠"]
 
 
 def test_position_buttons_use_the_yahoo_order():
