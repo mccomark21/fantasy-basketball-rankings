@@ -1,10 +1,8 @@
-"""Paths, config, playoff-week and position helpers that more than one script uses."""
+"""Paths, config, playoff-week and name helpers that more than one script uses."""
 import re
+import tomllib
 import unicodedata
 from pathlib import Path
-
-import pandas as pd
-import tomllib
 
 ROOT = Path(__file__).parent.parent
 DATA = ROOT / "data"
@@ -36,15 +34,3 @@ def name_key(name):
     text = re.sub(r"[^a-z ]", "", text.replace("-", " "))
     return " ".join(w for w in text.split() if w not in {"jr", "sr", "ii", "iii", "iv"})
 
-
-def positions(df):
-    """Yahoo positions for each player, for example "PG/SG". A player not in the Yahoo data gets "—".
-
-    df needs the columns name and player_id.
-    data/yahoo_names.csv gives the Yahoo name for a player whose name is different on Yahoo.
-    """
-    yahoo = pd.read_csv(DATA / "yahoo_players.csv", dtype=str)
-    pos = dict(zip(yahoo.name.map(name_key), yahoo.positions.str.replace(",", "/")))
-    fixes = pd.read_csv(DATA / "yahoo_names.csv", dtype=str)
-    names = df.player_id.astype(str).map(dict(zip(fixes.player_id, fixes.yahoo_name))).fillna(df.name)
-    return names.map(name_key).map(pos).fillna("—")
