@@ -180,7 +180,7 @@ The scripts write these files. Do not edit them.
 | `output/simulation_summary.csv` | The auction simulator: one row for each keeper (title %, playoff results, playoff score, dollars). |
 | `output/simulation_players.csv` | The auction simulator: for each keeper, the players in your core, how often, the lowest, median and highest price that you pay, and the lift (title % with the player − without him). |
 | `output/simulation_groups.csv` | The auction simulator: groups of 2 to 4 players in your core, with your title %, its standard error and the low end (title % − 2 × error). |
-| `output/keeper_report.html` | The keeper report: title % for each keeper, the top 5 groups of 3 or 4, the best roster and the players in your core. Open it in a browser. |
+| `output/keeper_report.html` | The keeper report: title % for each keeper, the top 5 groups of 3 or 4, the best roster with the top group and the players in your core. Open it in a browser. |
 | `output/simulation_runs.csv` | The auction simulator: one row for each player that you buy in each auction, with the results of that auction. |
 
 ## Common tasks

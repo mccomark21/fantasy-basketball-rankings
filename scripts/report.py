@@ -2,33 +2,74 @@
 
 Run auction.py first. This script reads the simulation_*.csv files in output/.
 The page shows each keeper's title percent, the top 5 groups of 3 or 4 players, the best roster and the players
-in your core. The best roster is the title-winning auction with the highest playoff score. It is the luckiest
-auction of many, so use the groups and the median prices to plan.
+in your core. The best roster is the title-winning auction with the highest playoff score among the auctions
+that have the top group in your core. It is the luckiest of those auctions, so use the groups and the median
+prices to plan.
+Each roster player gets his S and Q flags (as on the draft board) and one square for each playoff day: green = he
+plays and starts, red = he plays but the best lineup of your core benches him, gray = a stream player who plays.
 """
 import json
 
 import pandas as pd
 
 from common import OUT, load_config
-from rankings import build_rankings
+from draft_board import load as load_board
+from playoffs import playoff_schedule, read_schedule
+from team_score import make_playoffs
 
 TOP_GROUPS = 5  # groups of 3 or 4 for each keeper
 
 
-def best_rosters(runs, info):
+def day_squares(roster, days, playoffs, cfg):
+    """For each player in roster, one list of 7 squares for each playoff week (Monday to Sunday).
+
+    roster: player, role, team, pos and prod. days: the days of playoffs.playoff_schedule().
+    A square is "" (no game), "ok" (he starts), "jam" (he plays, but the best lineup of your core
+    benches him) or "stream" (a stream player plays; the model drops stream players each week).
+    """
+    by_date = {d.date: set(d.teams) for d in days.itertuples()}
+    core = [{**p, "pos": set(p["pos"].split("/"))} for p in roster if p["role"] != "Stream"]
+    squares = {p["player"]: [] for p in roster}
+    for week in cfg["playoffs"]["weeks"]:
+        rows = {name: [] for name in squares}
+        for date in pd.date_range(week["start"], week["end"]):
+            teams = by_date.get(date, set())
+            starters = {p["player"] for p in playoffs._lineup([p for p in core if p["team"] in teams])}
+            for p in roster:
+                plays = p["team"] in teams
+                state = "stream" if p["role"] == "Stream" else "ok" if p["player"] in starters else "jam"
+                rows[p["player"]].append(state if plays else "")
+        for name, row in rows.items():
+            squares[name].append(row)
+    return squares
+
+
+def best_rosters(runs, info, top_groups, days, playoffs, cfg):
     """For each keeper, the full roster of the title-winning auction with the highest playoff score.
 
-    runs: simulation_runs.csv. info: pos, team, dollars, playoff_games and quality_games, indexed by name.
+    Only the auctions that have all the players of the keeper's top group in your core count.
+    runs: simulation_runs.csv. info: the draft board players (draft_board.load() with prod), indexed by name.
+    top_groups: the top group for each keeper, as "A + B + C". A keeper with no top group uses all auctions.
     """
     best = {}
     for keeper, data in runs[runs.title].groupby("keeper", sort=False):
+        group = top_groups.get(keeper)
+        if group:
+            names = group.split(" + ")
+            core = data[data.core & data.player.isin(names)].groupby("run").player.nunique()
+            data = data[data.run.isin(core[core == len(names)].index)]
+            if data.empty:
+                continue
         top = data.loc[data.playoff_score.idxmax()]
         # dollars in runs is the team total. The player's own dollars come from info.
         roster = data[data.run == top.run].drop(columns="dollars").join(info, on="player")
         roster = roster.assign(role=roster.core.map({True: "Core", False: "Stream"}))
         roster.loc[roster.player == keeper, "role"] = "Keeper"
-        cols = ["player", "role", "pos", "team", "price", "dollars", "playoff_games", "quality_games"]
-        best[keeper] = {"playoff_score": round(top.playoff_score), "rr_win_pct": round(top.rr_win_pct, 1),
+        squares = day_squares(roster.to_dict("records"), days, playoffs, cfg)
+        roster = roster.assign(days=roster.player.map(squares))
+        cols = ["player", "role", "pos", "team", "price", "dollars", "no_team", "two_game", "s_flag", "q_flag",
+                "s_note", "q_note", "x_note", "days"]
+        best[keeper] = {"group": group, "playoff_score": round(top.playoff_score), "rr_win_pct": round(top.rr_win_pct, 1),
                         "spent": int(roster.price.sum()), "players": roster[cols].round(1).to_dict("records")}
     return best
 
@@ -39,15 +80,20 @@ def report_data(cfg):
     players = pd.read_csv(OUT / "simulation_players.csv")
     groups = pd.read_csv(OUT / "simulation_groups.csv")
     runs = pd.read_csv(OUT / "simulation_runs.csv")
-    info = build_rankings(cfg).set_index("name")[["pos", "team", "dollars", "playoff_games", "quality_games"]]
+    days = playoff_schedule(read_schedule(), cfg)[1]
+    board, playoffs = make_playoffs(load_board(cfg), days, cfg)
+    info = board.set_index("name")[["pos", "team", "dollars", "prod", "no_team", "two_game", "s_flag", "q_flag",
+                                    "s_note", "q_note", "x_note"]]
+    top_groups = {k: g[g["size"] >= 3].head(TOP_GROUPS) for k, g in groups.groupby("keeper", sort=False)}
     return {
         "runs": int(runs.groupby("keeper").run.nunique().iloc[0]),
         "summary": summary.round(1).to_dict("records"),
         "players": {k: g.drop(columns="keeper").round(1).to_dict("records")
                     for k, g in players.groupby("keeper", sort=False)},
-        "best": best_rosters(runs, info),
-        "groups": {k: g[g["size"] >= 3].head(TOP_GROUPS).drop(columns="keeper").round(1).to_dict("records")
-                   for k, g in groups.groupby("keeper", sort=False)},
+        "best": best_rosters(runs, info, {k: g.group.iloc[0] for k, g in top_groups.items() if len(g)},
+                             days, playoffs, cfg),
+        "dates": [[f"{d:%a %b} {d.day}" for d in pd.date_range(w["start"], w["end"])] for w in cfg["playoffs"]["weeks"]],
+        "groups": {k: g.drop(columns="keeper").round(1).to_dict("records") for k, g in top_groups.items()},
     }
 
 
@@ -70,6 +116,7 @@ HTML = """<title>Which Keeper Wins Titles?</title>
 :root {
   --bg: #f3f5f7; --panel: #ffffff; --ink: #14202b; --muted: #5b6b78; --line: #d8dee4;
   --accent: #1d5fd1; --accent-soft: #dce7fb; --good: #15803d; --bad: #c2410c;
+  --flag-good: #16a34a; --flag-bad: #dc2626; --flag-warn: #eab308; --flag-avg: #d6d3d1;
   --display: "Saira Condensed", "Arial Narrow", sans-serif;
   --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
   --data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
@@ -78,11 +125,13 @@ HTML = """<title>Which Keeper Wins Titles?</title>
   :root:not([data-theme="light"]) {
     --bg: #0f161d; --panel: #16212b; --ink: #e6edf3; --muted: #93a3b1; --line: #2a3946;
     --accent: #6ea0ff; --accent-soft: #1d2e4a; --good: #4ade80; --bad: #fb923c; color-scheme: dark;
+    --flag-good: #22c55e; --flag-bad: #ef4444; --flag-warn: #facc15; --flag-avg: #57534e;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0f161d; --panel: #16212b; --ink: #e6edf3; --muted: #93a3b1; --line: #2a3946;
   --accent: #6ea0ff; --accent-soft: #1d2e4a; --good: #4ade80; --bad: #fb923c; color-scheme: dark;
+  --flag-good: #22c55e; --flag-bad: #ef4444; --flag-warn: #facc15; --flag-avg: #57534e;
 }
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--ink); font: 16px/1.5 var(--body); }
@@ -139,6 +188,20 @@ th button { all: unset; cursor: pointer; }
 th button:hover { color: var(--accent); }
 td:first-child, th:first-child, td.l, th.l { text-align: left; }
 td.num { font-family: var(--data); }
+/* Best roster: S and Q flags as on the draft board, then 3 rows (weeks) of 7 squares (days). */
+.sched { display: flex; align-items: center; gap: 8px; }
+.flag { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+        margin-right: 3px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700; cursor: default; }
+.flag.good { background: var(--flag-good); } .flag.warn { background: var(--flag-warn); color: #1c1917; }
+.flag.bad { background: var(--flag-bad); } .flag.avg { background: var(--flag-avg); color: var(--ink); }
+.flag.wide { width: 39px; border-radius: 9px; }
+.days { display: grid; grid-template-columns: repeat(7, 9px); gap: 2px; }
+.days i { width: 9px; height: 9px; border: 1px solid var(--line); border-radius: 2px; }
+.days i.ok { background: var(--flag-good); border-color: var(--flag-good); }
+.days i.jam { background: var(--flag-bad); border-color: var(--flag-bad); }
+.days i.stream { background: var(--muted); border-color: var(--muted); }
+.legend { display: inline-flex; gap: 12px; flex-wrap: wrap; }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
 .chip { display: inline-block; min-width: 3.2em; padding: 1px 6px; border-radius: 3px; font-family: var(--data); text-align: right; }
 .chip.up { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
 .chip.down { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
@@ -165,8 +228,12 @@ td.num { font-family: var(--data); }
         <ol class="groups" id="groups"></ol>
       </div>
       <div class="card">
-        <h3>Best roster</h3>
+        <h3>Best roster with the top group</h3>
         <p class="meta" id="best-meta"></p>
+        <p class="meta legend"><span><span class="days"><i class="ok"></i></span>Plays and starts</span>
+          <span><span class="days"><i class="jam"></i></span>Plays, but your core has no open slot</span>
+          <span><span class="days"><i class="stream"></i></span>Stream player plays</span>
+          <span><span class="days"><i></i></span>No game</span></p>
         <div class="scroll"><table id="best"></table></div>
       </div>
       <div class="card">
@@ -260,16 +327,28 @@ function renderGroups() {
 
 function renderBest() {
   const b = DATA.best[current];
-  if (!b) { document.getElementById("best-meta").textContent = "No title-winning auction for this keeper."; document.getElementById("best").innerHTML = ""; return; }
+  if (!b) { document.getElementById("best-meta").textContent = "No title-winning auction has the top group for this keeper."; document.getElementById("best").innerHTML = ""; return; }
+  const from = b.group ? `of the auctions with ${b.group.split(" + ").join(", ")} in your core` : "";
   document.getElementById("best-meta").textContent =
-    `The title-winning auction with the highest playoff score. Spent $${b.spent} of $200. ` +
+    `The title-winning auction with the highest playoff score${from ? " " + from : ""}. Spent $${b.spent} of $200. ` +
     `Playoff score ${b.playoff_score}. Weekly win % vs playoff teams ${fmt(b.rr_win_pct, 1)}%. Stream spots get new players each week.`;
   const cols = [["player", "Player", "l"], ["role", "Role", "l"], ["pos", "Pos", "l"], ["team", "Team", "l"],
-                ["price", "Price", ""], ["dollars", "Value", ""], ["playoff_games", "Playoff G", ""], ["quality_games", "Quality G", ""]];
-  const cell = (r, k) => (k === "price" || k === "dollars") ? `$${fmt(r[k])}` : esc(r[k] ?? "—");
+                ["price", "Price", ""], ["dollars", "Value", ""], ["days", "Playoff days", "l"]];
+  const cell = (r, k) => k === "days" ? schedCell(r) : (k === "price" || k === "dollars") ? `$${fmt(r[k])}` : esc(r[k] ?? "—");
   document.getElementById("best").innerHTML =
     `<thead><tr>${cols.map(([, h, c]) => `<th class="${c}">${h}</th>`).join("")}</tr></thead>` +
     `<tbody>${b.players.map(r => `<tr>${cols.map(([k, , c]) => `<td class="${c || "num"}">${cell(r, k)}</td>`).join("")}</tr>`).join("")}</tbody>`;
+}
+
+// The S and Q flags of the draft board, then one row of 7 squares (Monday to Sunday) for each playoff week.
+const flag = (letter, grade, note, wide) => `<span class="flag ${grade}${wide ? " wide" : ""}" title="${esc(note)}">${letter}</span>`;
+const SQUARE = { ok: "plays and starts", jam: "plays, but is on the bench", stream: "stream player plays", "": "no game" };
+function schedCell(r) {
+  const flags = r.no_team ? "—" : r.two_game ? flag("X", "bad", r.x_note, true)
+    : flag("S", r.s_flag, r.s_note) + flag("Q", r.q_flag, r.q_note);
+  const days = r.days.map((week, w) => week.map((d, i) =>
+    `<i class="${d}" title="${esc(DATA.dates[w][i])}: ${SQUARE[d]}"></i>`).join("")).join("");
+  return `<span class="sched"><span>${flags}</span><span class="days" role="img" aria-label="Playoff days">${days}</span></span>`;
 }
 
 function select(k) {
