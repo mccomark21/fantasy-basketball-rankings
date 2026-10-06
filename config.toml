@@ -14,6 +14,10 @@ budget = 200
 min_bid = 1
 spots = 10                 # bought roster spots for each team
 
+# League price: Yahoo's order of players, with the prices of this league's past drafts. See scripts/market.py.
+[market]
+drafts = "data/draft_results.csv"
+
 # Weight for each category z-score. See docs/category_weights.md.
 # Punted categories (FG%, FT%, TO) are not in this list.
 [weights]
