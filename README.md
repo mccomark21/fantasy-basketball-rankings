@@ -114,13 +114,14 @@ scripts/
   fetch_yahoo.py          Downloads data/yahoo_players.csv from the public Yahoo draft analysis pages
   rankings.py             Writes output/rankings.csv and output/playoff_schedule.csv
   valuation.py            Calculates the value of each player (used by rankings.py)
+  identity.py             Links each player to an ESPN team and a Yahoo row (used by rankings.py)
   draft_board.py          Writes output/draft_board.html and output/draft_board.md
-  common.py               Shared helpers: paths, config, playoff weeks, positions and names
+  common.py               Shared helpers: paths, config, playoff weeks and names
 data/                     Inputs (not tracked by Git)
 output/                   Generated files (not tracked by Git)
 docs/
   category_weights.md     How the category weights were calculated
-tests/                    Tests for valuation.py and draft_board.py
+tests/                    Tests for valuation.py, identity.py and draft_board.py
 ```
 
 ### Data files
@@ -128,8 +129,7 @@ tests/                    Tests for valuation.py and draft_board.py
 | File | Purpose | Edit by hand |
 |---|---|---|
 | `data/Projections.csv` | Season projections. Replace the file when projections change. | Yes |
-| `data/team_overrides.csv` | ESPN name fixes (`espn_name`) or a fixed team (`team`) for each player. | Yes |
-| `data/yahoo_names.csv` | The Yahoo name (`yahoo_name`) for each player whose name is different on Yahoo. | Yes |
+| `data/name_overrides.csv` | Name fixes for players who do not match: the ESPN name (`espn_name`), the Yahoo name (`yahoo_name`) or a fixed team (`team`). | Yes |
 | `data/rosters.csv`, `data/schedule.csv` | ESPN data from `fetch_data.py`. | No |
 | `data/yahoo_players.csv` | Yahoo data from `fetch_yahoo.py`. | No |
 
@@ -153,8 +153,7 @@ The scripts write these files. Do not edit them.
 | Change how player value is calculated | [`scripts/valuation.py`](scripts/valuation.py) |
 | Add a column to the rankings | [`scripts/rankings.py`](scripts/rankings.py) |
 | Change the layout or the columns of the draft board | [`scripts/draft_board.py`](scripts/draft_board.py) |
-| Fix a player with no team | `data/team_overrides.csv`. See [Players with no team](#players-with-no-team). |
-| Fix a player with no Yahoo data | `data/yahoo_names.csv`. See [Yahoo name differences](#yahoo-name-differences). |
+| Fix a player with no team or no Yahoo data | `data/name_overrides.csv`. See [Players who do not match](#players-who-do-not-match). |
 | Read why the weights have their values | [`docs/category_weights.md`](docs/category_weights.md) |
 | Find planned work | [GitHub issues](https://github.com/mccomark21/fantasy-basketball-rankings/issues) |
 
@@ -231,18 +230,17 @@ The data comes from all Yahoo leagues, not only this league. The league's own pa
 
 ## Data maintenance
 
-### Players with no team
+### Players who do not match
 
-`rankings.py` prints a list of players with no team. Add each player to `data/team_overrides.csv`:
+`rankings.py` matches each projection name to the ESPN rosters and the Yahoo data. The match ignores accents, punctuation and suffixes such as Jr. and III.
 
-- If the name is different on ESPN, put the ESPN name in `espn_name`.
-- For a free agent or a different case, put the team abbreviation in `team`. Use ESPN abbreviations, for example `GS`, `NY`, `SA`.
+For players in the top 190 (the player pool plus 50), `rankings.py` prints each player with no team and each player with no Yahoo data. Add each player to `data/name_overrides.csv` and fill only the cells that you need:
 
-### Yahoo name differences
+- `espn_name`: the name on ESPN, if it is different.
+- `yahoo_name`: the name on Yahoo, if it is different. Examples: Alex Sarr, Nic Claxton, Cameron Johnson, Herbert Jones and Luguentz Dort.
+- `team`: the team abbreviation for a free agent or a different case. Use ESPN abbreviations, for example `GS`, `NY`, `SA`. This value replaces the ESPN team.
 
-Some names are different on Yahoo, for example Alex Sarr, Nic Claxton, Cameron Johnson, Herbert Jones and Luguentz Dort.
-
-`draft_board.py` matches names without accents, punctuation or suffixes such as Jr. and III. For a different mismatch, add the player to `data/yahoo_names.csv`.
+A player outside the Yahoo top 500 has no Yahoo data. This is expected.
 
 ## Troubleshooting
 

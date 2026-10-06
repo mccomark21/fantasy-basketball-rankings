@@ -7,7 +7,8 @@ Output: rankings.csv
 import numpy as np
 import pandas as pd
 
-from common import DATA, OUT, ROOT, load_config, name_key, positions, q_cols, week_value, weeks
+from common import DATA, OUT, ROOT, load_config, q_cols, week_value, weeks
+from identity import link_players
 from valuation import value_players
 
 # Category name in config.toml -> column calculated from the projections
@@ -29,17 +30,9 @@ def load_players(cfg):
         df[cat] = calc(df) / df.games
     df["mpg"] = df.minutes / df.games
 
-    rosters = pd.read_csv(DATA / "rosters.csv")
-    teams = dict(zip(rosters.espn_name.map(name_key), rosters.team))
-    df["team"] = df.name.map(name_key).map(teams)
-
-    # espn_name: the player has a different name on ESPN (the team updates on each fetch)
-    # team: set the team directly (for example, a free agent who signs)
-    overrides = pd.read_csv(DATA / "team_overrides.csv", dtype=str).fillna("")
-    for row in overrides.itertuples():
-        team = row.team or teams.get(name_key(row.espn_name))
-        df.loc[df.player_id == int(row.player_id), "team"] = team
-    return df
+    links = link_players(df, pd.read_csv(DATA / "rosters.csv"), pd.read_csv(DATA / "yahoo_players.csv"),
+                         pd.read_csv(DATA / "name_overrides.csv", dtype=str).fillna(""))
+    return df.join(links)
 
 
 def team_schedule(cfg):
@@ -99,15 +92,17 @@ def main():
     df = df.sort_values("value", ascending=False).reset_index(drop=True)
     df.insert(0, "rank", df.index + 1)
     df["pg_rank"] = df.pg_value.rank(ascending=False).astype(int)
-    df["pos"] = positions(df)
     cols = (["rank", "pg_rank", "name", "team", "pos", "games", "mpg", *STATS, *week_cols, "playoff_games",
              *quality_cols, "quality_games", "q_season", "sched_score", "sched_rank", "pg_value", "value"] + ["z_" + c for c in cfg["weights"]] + ["player_id"])
     df[cols].round(2).to_csv(OUT / "rankings.csv", index=False)
 
-    missing = df[df.team.isna() & (df["rank"] <= pool_size + 50)]
-    if len(missing):
-        print("No team found (add to data/team_overrides.csv):")
-        print(missing[["player_id", "name", "rank"]].to_string(index=False), "\n")
+    top = df[df["rank"] <= pool_size + 50]
+    for col, message in [("team", "No team found (add espn_name or team to data/name_overrides.csv):"),
+                         ("yahoo_id", "No Yahoo data found (add yahoo_name to data/name_overrides.csv):")]:
+        missing = top[top[col].isna()]
+        if len(missing):
+            print(message)
+            print(missing[["player_id", "name", "rank"]].to_string(index=False), "\n")
     print(df[["rank", "pg_rank", "name", "team", "pos", "games", *week_cols, "quality_games", "sched_score", "value"]].head(30).round(2).to_string(index=False))
     print(f"\nWrote {len(df)} players to rankings.csv")
 
