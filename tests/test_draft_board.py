@@ -70,3 +70,19 @@ def test_league_price_and_diff_come_after_dollars_and_sort_a_missing_price_last(
     assert cols["Diff"](bargain).endswith('>+12</td>') and "var(--good)" in cols["Diff"](bargain)
     unknown = pd.Series({"league_price": float("nan"), "surplus": float("nan")})
     assert cols["League $"](unknown) == cols["Diff"](unknown) == '<td data-v="-999">—</td>'
+
+
+def test_group_panel_lists_the_top_groups_of_3_or_more_for_each_keeper():
+    groups = pd.DataFrame([
+        # keeper, group, size, runs, title_pct, se, low (sorted by low, as simulation_groups.csv is)
+        ("Flagg", "A + B", 2, 300, 70.0, 2.0, 66.0),
+        ("Flagg", "A + C + D + E", 4, 30, 80.0, 7.0, 66.0),
+        ("Flagg", "A + B + C", 3, 70, 74.0, 5.0, 64.0),
+        ("Buzelis", "B + C + D", 3, 50, 60.0, 6.0, 48.0),
+    ], columns=["keeper", "group", "size", "runs", "title_pct", "se", "low"])
+    html = draft_board.group_panel(groups, top=1)
+
+    assert re.findall(r'<option value="([^"]*)"', html) == ["Flagg", "Buzelis"]  # the order of the file
+    # Pairs are left out. The top group by low for each keeper.
+    assert re.findall(r'data-players="([^"]*)"', html) == ["A|C|D|E", "B|C|D"]
+    assert "80% ±7" in html and "30 auctions" in html

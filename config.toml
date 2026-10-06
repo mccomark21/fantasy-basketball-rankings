@@ -3,6 +3,9 @@
 [league]
 teams = 14
 roster_spots = 10          # 6 starters (PG, SG, SF, PF, C, Util) + 4 bench; the player pool is teams x roster_spots
+slots = ["PG", "SG", "SF", "PF", "C"]  # starting slots for one position (Util and bench take any player)
+adds = 5                   # adds each week
+playoff_teams = 8          # teams in the playoff bracket (a power of 2)
 projections = "data/Projections.csv"
 espn_season = 2027         # ESPN uses the year that the season ends
 
@@ -17,6 +20,21 @@ spots = 10                 # bought roster spots for each team
 # League price: Yahoo's order of players, with the prices of this league's past drafts. See scripts/market.py.
 [market]
 drafts = "data/draft_results.csv"
+
+# Auction simulator: python scripts/auction.py. See the docstring of scripts/auction.py.
+[simulation]
+runs = 2000                # auctions for each keeper (about 5 minutes on 16 CPU cores)
+noise = 0.20               # spread of the random noise on each bot bid and on the nomination order (lognormal sigma)
+seed = 1                   # the same seed gives the same results
+# Your keeper candidates. The simulator runs each one as your keeper and compares the results.
+# Keeper cost = league_price. Other teams' keepers are not in the simulation.
+keepers = ["Matas Buzelis", "Cooper Flagg", "Tyrese Maxey"]
+# Your strategy: buy core players, then pay min_bid for each other spot and use those spots for streamers.
+core = 7
+# Your bid for a core player = dollars x (1 - playoff_weight + playoff_weight x fit). fit = what the player
+# adds to your playoff score / what a player with an average playoff schedule adds. See scripts/team_score.py.
+playoff_weight = 1.0
+fit_limits = [0.5, 1.5]    # the lowest and the highest fit
 
 # Weight for each category z-score. See docs/category_weights.md.
 # Punted categories (FG%, FT%, TO) are not in this list.

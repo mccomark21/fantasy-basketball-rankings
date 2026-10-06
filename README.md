@@ -89,6 +89,8 @@ python scripts/fetch_yahoo.py  # Download Yahoo positions, auction prices and AD
 python scripts/rankings.py     # Write output/rankings.csv and output/playoff_schedule.csv.
 python scripts/draft_board.py  # Write output/draft_board.md and output/draft_board.html.
 python scripts/publish.py      # Optional. Put the board on GitHub Pages.
+python scripts/auction.py      # Optional. Simulate the auction for each keeper candidate.
+python scripts/report.py       # Optional. Write the keeper report page from the simulator results.
 ```
 
 Open `output/draft_board.html` in a browser.
@@ -119,7 +121,7 @@ All settings are in [`config.toml`](config.toml). To apply a change, run the scr
 
 | Section | Controls |
 |---|---|
-| `[league]` | League size, roster spots, the projections file and the ESPN season. |
+| `[league]` | League size, roster spots, the position slots, the adds each week, the playoff teams, the projections file and the ESPN season. |
 | `[auction]` | The budget, the minimum bid and the bought roster spots for auction dollars. See [Valuation](#valuation). |
 | `[weights]` | The weight of each ranked category. See [`docs/category_weights.md`](docs/category_weights.md). |
 | `[games]` | The penalty for missed games. See [Valuation](#valuation). |
@@ -127,6 +129,7 @@ All settings are in [`config.toml`](config.toml). To apply a change, run the scr
 | `[quality_games]` | The low-volume day limit and the bonus for each quality game. |
 | `[board]` | The low-games mark and the tiers in the Markdown board. |
 | `[flags]` | The limits that make a draft board flag green, gray, yellow or a red X. |
+| `[simulation]` | The auction simulator: the number of runs, the bid noise, the seed, your keeper candidates, your core size and the playoff fit. See [Auction simulator](#auction-simulator). |
 
 ## Project structure
 
@@ -142,12 +145,17 @@ scripts/
   playoffs.py             Playoff-week rules: games, quality games, schedule score, short weeks
   draft_board.py          Writes output/draft_board.html and output/draft_board.md
   publish.py              Pushes the draft board to GitHub Pages
+  auction.py              Simulates the auction many times for each keeper candidate
+  team_score.py           Playoff score of a roster: daily lineups and streamers in weeks 19 to 21
+  matchups.py             Playoff face-offs: round robin and bracket of the top teams
+  sim_results.py          Player and group tables from the simulator runs
+  report.py               Writes output/keeper_report.html from the simulator results
   common.py               Shared helpers: paths, config, playoff week names and names
 data/                     Inputs (not tracked by Git)
 output/                   Generated files (not tracked by Git)
 docs/
   category_weights.md     How the category weights were calculated
-tests/                    Tests for valuation.py, identity.py, playoffs.py, draft_board.py and publish.py
+tests/                    Tests for valuation.py, identity.py, playoffs.py, draft_board.py, publish.py, auction.py, team_score.py, matchups.py and sim_results.py
 ```
 
 ### Data files
@@ -169,6 +177,11 @@ The scripts write these files. Do not edit them.
 | `output/playoff_schedule.csv` | Playoff days for each team. See [playoff_schedule.csv](#playoff_schedulecsv). |
 | `output/draft_board.html` | The Playoff Draft Board: one sortable table of all players in the projections, with Yahoo positions and S, Q and X flags. Open it in a browser. |
 | `output/draft_board.md` | The Playoff Draft Board as Markdown. |
+| `output/simulation_summary.csv` | The auction simulator: one row for each keeper (title %, playoff results, playoff score, dollars). |
+| `output/simulation_players.csv` | The auction simulator: for each keeper, the players in your core, how often, the lowest, median and highest price that you pay, and the lift (title % with the player − without him). |
+| `output/simulation_groups.csv` | The auction simulator: groups of 2 to 4 players in your core, with your title %, its standard error and the low end (title % − 2 × error). |
+| `output/keeper_report.html` | The keeper report: title % for each keeper, the top 5 groups of 3 or 4, the best roster and the players in your core. Open it in a browser. |
+| `output/simulation_runs.csv` | The auction simulator: one row for each player that you buy in each auction, with the results of that auction. |
 
 ## Common tasks
 
@@ -199,6 +212,48 @@ The scripts write these files. Do not edit them.
 For a player below replacement level, the final value is the per-game value above replacement. This rule stops missed games from making a below-replacement player look better.
 
 The playoff schedule does not change the final value. The schedule columns and the draft board flags are for information only.
+
+### Auction simulator
+
+`auction.py` runs the 14-team auction `simulation.runs` times for each keeper in `simulation.keepers`. Team 0 is your team. The other 13 teams are bots.
+
+- Bots: a bot's maximum bid starts at `league_price` and moves to `yahoo_cost` as the roster spots fill. Each bid has random noise.
+- Your bot: it buys a core of `simulation.core` players (7) and pays $1 for each other spot. You use those spots for streamers. For a core player, it bids your `dollars` × a scale × the playoff fit:
+  - The scale moves the money of the stream spots to the core.
+  - The fit compares what the player adds to your playoff score with what a player on an average playoff schedule adds. That other player has any position, so a crowded position lowers the fit. The fit goes from 0.5 to 1.5.
+- Rules: $200 budget, 10 spots, $1 minimum bid. A maximum bid leaves $1 for each other empty spot. A team bids only if it can still fill PG, SG, SF, PF and C.
+- Price: the winner pays the second-highest maximum bid + $1.
+- Your keeper costs his `league_price` and takes one spot. The simulation ignores the other teams' keepers.
+
+After each auction, the top teams play the playoff weeks head to head. See [Playoff face-offs](#playoff-face-offs).
+
+For each keeper, the output shows your title percent, your face-off results, your playoff score and the median sum of your `dollars`. It also shows the players that you win most often and the median price that you pay for each one.
+
+The auctions run in parallel, one process for each CPU core. Each keeper gets the same random seeds, so the comparison between keepers is fair. 2,000 auctions for each keeper take about 5 minutes on 16 cores.
+
+The simulator writes the `simulation_*.csv` files to `output/`. Run `draft_board.py` after it: the board then shows a **Strong groups** panel (the groups of 3 or 4 with the best low end, for the keeper that you pick) and a **Lift** column. Click a group to show only its players.
+
+### Playoff score
+
+`team_score.py` scores a roster in weeks 19 to 21:
+
+1. Production: the weighted per-game stats of a player, each divided by the standard deviation of the player pool, × (games / full season).
+2. Each day, the best legal lineup of your core starts (PG, SG, SF, PF, C and Util).
+3. Streamers fill empty starting slots on busy days. Your stream spots start each week empty, and each new streamer uses one of your 5 adds. A streamer comes from the team with the most games left in the week and stays until the end of the week. There are no adds on quality days.
+4. The playoff score is the total production of the starters and the streamers.
+
+### Playoff face-offs
+
+`matchups.py` plays the playoff weeks for each simulated auction:
+
+1. Each team has a core of 7 players and streams the other spots, as you do. A bot's core is its best 7 players by production.
+2. The 8 teams with the highest season value of their core make the playoffs (`league.playoff_teams`).
+3. Each week, a team's total in each category is its expected total + random noise. The noise treats a total as a random count (variance = mean). Points get twice that variance.
+4. A team wins a matchup if it wins more of the 6 categories.
+5. Round robin: each week, each pair of playoff teams plays. `rr_win_pct` is your win percent, and a tie counts as half a win.
+6. Bracket: 1 v 8, 4 v 5, 2 v 7 and 3 v 6 in week 19, then the semifinals and the final. A tie goes to the higher seed. `title_pct` is the percent of auctions that you win the final.
+
+The bots do not plan for the playoffs, so the title percent is higher than in a real league. Use it to compare keepers, not as a forecast.
 
 ### Schedule score
 
@@ -288,7 +343,7 @@ python -m pip install greenlet==3.1.1
 python -m pytest
 ```
 
-The tests are in `tests/`. They cover `valuation.py`, `identity.py`, `playoffs.py`, two parts of `draft_board.py` (the data load and the filter bar) and `publish.py`. The `publish.py` tests make temporary Git repos, so they need `git` on the `PATH`.
+The tests are in `tests/`. They cover `valuation.py`, `identity.py`, `playoffs.py`, two parts of `draft_board.py` (the data load and the filter bar), `publish.py`, `auction.py`, `team_score.py`, `matchups.py` and `sim_results.py`. The `publish.py` tests make temporary Git repos, so they need `git` on the `PATH`.
 
 ## Roadmap
 
