@@ -120,7 +120,7 @@ All settings are in [`config.toml`](config.toml). To apply a change, run the scr
 
 | Section | Controls |
 |---|---|
-| `[league]` | League size, roster spots, the position slots, the projections file and the ESPN season. |
+| `[league]` | League size, roster spots, the position slots, the adds each week, the projections file and the ESPN season. |
 | `[auction]` | The budget, the minimum bid and the bought roster spots for auction dollars. See [Valuation](#valuation). |
 | `[weights]` | The weight of each ranked category. See [`docs/category_weights.md`](docs/category_weights.md). |
 | `[games]` | The penalty for missed games. See [Valuation](#valuation). |
@@ -128,7 +128,7 @@ All settings are in [`config.toml`](config.toml). To apply a change, run the scr
 | `[quality_games]` | The low-volume day limit and the bonus for each quality game. |
 | `[board]` | The low-games mark and the tiers in the Markdown board. |
 | `[flags]` | The limits that make a draft board flag green, gray, yellow or a red X. |
-| `[simulation]` | The auction simulator: the number of runs, the bid noise, the seed and your keeper candidates. See [Auction simulator](#auction-simulator). |
+| `[simulation]` | The auction simulator: the number of runs, the bid noise, the seed, your keeper candidates, your core size and the playoff fit. See [Auction simulator](#auction-simulator). |
 
 ## Project structure
 
@@ -145,12 +145,13 @@ scripts/
   draft_board.py          Writes output/draft_board.html and output/draft_board.md
   publish.py              Pushes the draft board to GitHub Pages
   auction.py              Simulates the auction many times for each keeper candidate
+  team_score.py           Playoff score of a roster: daily lineups and streamers in weeks 19 to 21
   common.py               Shared helpers: paths, config, playoff week names and names
 data/                     Inputs (not tracked by Git)
 output/                   Generated files (not tracked by Git)
 docs/
   category_weights.md     How the category weights were calculated
-tests/                    Tests for valuation.py, identity.py, playoffs.py, draft_board.py, publish.py and auction.py
+tests/                    Tests for valuation.py, identity.py, playoffs.py, draft_board.py, publish.py, auction.py and team_score.py
 ```
 
 ### Data files
@@ -208,12 +209,23 @@ The playoff schedule does not change the final value. The schedule columns and t
 `auction.py` runs the 14-team auction `simulation.runs` times for each keeper in `simulation.keepers`. Team 0 is your team. The other 13 teams are bots.
 
 - Bots: a bot's maximum bid starts at `league_price` and moves to `yahoo_cost` as the roster spots fill. Each bid has random noise.
-- Your bot: it bids up to your `dollars`.
+- Your bot: it buys a core of `simulation.core` players (7) and pays $1 for each other spot. You use those spots for streamers. For a core player, it bids your `dollars` × a scale × the playoff fit:
+  - The scale moves the money of the stream spots to the core.
+  - The fit compares what the player adds to your playoff score with a player who has an average playoff schedule. It goes from 0.5 to 1.5.
 - Rules: $200 budget, 10 spots, $1 minimum bid. A maximum bid leaves $1 for each other empty spot. A team bids only if it can still fill PG, SG, SF, PF and C.
 - Price: the winner pays the second-highest maximum bid + $1.
 - Your keeper costs his `league_price` and takes one spot. The simulation ignores the other teams' keepers.
 
-For each keeper, the output shows the range of your team score (the sum of your `dollars`). It also shows the players that you win most often and the median price that you pay for each one. The team score does not use the playoff schedule yet.
+For each keeper, the output shows the range of your playoff score and the median sum of your `dollars`. It also shows the players that you win most often and the median price that you pay for each one.
+
+### Playoff score
+
+`team_score.py` scores a roster in weeks 19 to 21:
+
+1. Production: the weighted per-game stats of a player, each divided by the spread of the player pool, × (games / 82).
+2. Each day, the best legal lineup of your core starts (PG, SG, SF, PF, C and Util).
+3. Streamers fill empty starting slots on busy days. Your stream spots start each week empty, and each pickup uses one of your 5 adds. A streamer comes from the team with the most games left in the week and stays until the end of the week. There are no pickups on quality days.
+4. The playoff score is the total production of the starters and the streamers.
 
 ### Schedule score
 
@@ -303,7 +315,7 @@ python -m pip install greenlet==3.1.1
 python -m pytest
 ```
 
-The tests are in `tests/`. They cover `valuation.py`, `identity.py`, `playoffs.py`, two parts of `draft_board.py` (the data load and the filter bar), `publish.py` and `auction.py`. The `publish.py` tests make temporary Git repos, so they need `git` on the `PATH`.
+The tests are in `tests/`. They cover `valuation.py`, `identity.py`, `playoffs.py`, two parts of `draft_board.py` (the data load and the filter bar), `publish.py`, `auction.py` and `team_score.py`. The `publish.py` tests make temporary Git repos, so they need `git` on the `PATH`.
 
 ## Roadmap
 

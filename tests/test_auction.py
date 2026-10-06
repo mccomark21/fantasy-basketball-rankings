@@ -6,13 +6,16 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 from auction import run_auction, simulate  # noqa: E402
+from team_score import Playoffs  # noqa: E402
 
 ANY = "PG/SG/SF/PF/C"
 
 
-def config(teams=2, spots=5, budget=100, noise=0.0, slots=()):
-    return {"league": {"teams": teams, "slots": list(slots)}, "auction": {"budget": budget, "min_bid": 1, "spots": spots},
-            "simulation": {"noise": noise}}
+def config(teams=2, spots=5, budget=100, noise=0.0, slots=(), core=None):
+    """core = spots by default: your bot has no stream spots."""
+    return {"league": {"teams": teams, "slots": list(slots), "adds": 0},
+            "auction": {"budget": budget, "min_bid": 1, "spots": spots},
+            "simulation": {"noise": noise, "core": core or spots, "playoff_weight": 1.0, "fit_limits": [0.5, 1.5]}}
 
 
 def pool(*players):
@@ -91,7 +94,7 @@ def test_simulate_gives_your_team_score_and_the_players_you_win():
     players = pool(("K", ANY, 15, 10, 10), ("A", ANY, 30, 20, 20), ("B", ANY, 5, 18, 18))
     scores, won = simulate(players, config(spots=2), "K", runs=5, rng=np.random.default_rng(0))
 
-    assert scores.tolist() == [45] * 5  # dollars of K + A
+    assert scores.dollars.tolist() == [45] * 5  # dollars of K + A
     assert won.to_dict("index") == {"A": {"win_pct": 100.0, "price": 21.0}}
 
 
@@ -101,3 +104,40 @@ def test_win_pct_counts_the_runs_that_you_win_the_player():
     won = simulate(players, config(spots=1), None, runs=400, rng=np.random.default_rng(0))[1]
     assert 40 < won.win_pct["A"] < 60
     assert won.price["A"] == 20
+
+
+def test_after_your_core_is_full_your_bot_bids_only_min_bid():
+    players = pool(("A", ANY, 30, 20, 20), ("B", ANY, 30, 10, 10), ("C", ANY, 0, 5, 5), ("D", ANY, 0, 5, 5))
+    sales = run_auction(players, config(spots=2, core=1), np.random.default_rng(0))
+    assert sold(sales, "A") == [0, 21]
+    assert sold(sales, "B") == [1, 2]
+
+
+def test_your_bot_moves_the_money_of_the_stream_spots_to_the_core():
+    # The bought players have $120 of dollars. The 2 cheapest ($40, 1 stream spot for each team) are $20 a team.
+    # You pay $1 for your stream spot, so the core gets $99 for $80 of dollars: bids x 99/80.
+    players = pool(("A", ANY, 40, 45, 45), ("B", ANY, 40, 30, 30), ("C", ANY, 20, 5, 5), ("D", ANY, 20, 5, 5))
+    sales = run_auction(players, config(spots=2, core=1), np.random.default_rng(0))
+    assert sold(sales, "A") == [0, 46]  # your bid: 40 x 99/80 = 49.5
+
+
+def test_your_bot_bids_more_for_a_player_who_fits_your_playoff_schedule():
+    # BOS plays on both playoff days, NY on none. An average bought player plays 2 games, so fit = 1 and 0.5.
+    days = pd.DataFrame({"week": "wk1", "quality": False, "teams": [["BOS"], ["BOS"]]})
+    cfg = config(spots=2)
+    players = pool(("X", ANY, 20, 15, 15), ("Y", ANY, 20, 15, 15)).assign(team=["BOS", "NY"], prod=[5.0, 5.0])
+    sales = run_auction(players, cfg, np.random.default_rng(0), playoffs=Playoffs(days, 0.0, 2, cfg))
+    assert sold(sales, "X") == [0, 16]
+    assert sold(sales, "Y") == [1, 11]  # your bid: 20 x 0.5 = 10
+
+
+def test_simulate_gives_the_playoff_score_of_your_core():
+    # Your core is K and A. Both play for BOS on the 2 playoff days, at C and Util.
+    # B is your stream spot and does not count.
+    days = pd.DataFrame({"week": "wk1", "quality": False, "teams": [["BOS"], ["BOS"]]})
+    cfg = config(spots=3, core=2, slots=["C"])
+    players = pool(("K", ANY, 15, 10, 10), ("A", ANY, 30, 20, 20), ("B", ANY, 0, 1, 1),
+                   ("C", ANY, 5, 18, 18), ("D", ANY, 1, 9, 9), ("E", ANY, 1, 8, 8))
+    players = players.assign(team="BOS", prod=[3.0, 5.0, 9.0, 1.0, 1.0, 1.0])
+    scores = simulate(players, cfg, "K", runs=3, rng=np.random.default_rng(0), playoffs=Playoffs(days, 0.0, 2, cfg))[0]
+    assert scores.playoff.tolist() == [16] * 3  # (3 + 5) x 2 days
