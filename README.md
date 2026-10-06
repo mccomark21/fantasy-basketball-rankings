@@ -147,12 +147,13 @@ scripts/
   auction.py              Simulates the auction many times for each keeper candidate
   team_score.py           Playoff score of a roster: daily lineups and streamers in weeks 19 to 21
   matchups.py             Playoff face-offs: round robin and bracket of the top teams
+  sim_results.py          Player and group tables from the simulator runs
   common.py               Shared helpers: paths, config, playoff week names and names
 data/                     Inputs (not tracked by Git)
 output/                   Generated files (not tracked by Git)
 docs/
   category_weights.md     How the category weights were calculated
-tests/                    Tests for valuation.py, identity.py, playoffs.py, draft_board.py, publish.py, auction.py, team_score.py and matchups.py
+tests/                    Tests for valuation.py, identity.py, playoffs.py, draft_board.py, publish.py, auction.py, team_score.py, matchups.py and sim_results.py
 ```
 
 ### Data files
@@ -174,6 +175,10 @@ The scripts write these files. Do not edit them.
 | `output/playoff_schedule.csv` | Playoff days for each team. See [playoff_schedule.csv](#playoff_schedulecsv). |
 | `output/draft_board.html` | The Playoff Draft Board: one sortable table of all players in the projections, with Yahoo positions and S, Q and X flags. Open it in a browser. |
 | `output/draft_board.md` | The Playoff Draft Board as Markdown. |
+| `output/simulation_summary.csv` | The auction simulator: one row for each keeper (title %, playoff results, playoff score, dollars). |
+| `output/simulation_players.csv` | The auction simulator: for each keeper, the players in your core, how often, the price and the lift (title % with the player − without him). |
+| `output/simulation_groups.csv` | The auction simulator: groups of 2 to 4 players in your core, with your title %, its standard error and the low end (title % − 2 × error). |
+| `output/simulation_runs.csv` | The auction simulator: one row for each player that you buy in each auction, with the results of that auction. |
 
 ## Common tasks
 
@@ -221,7 +226,9 @@ After each auction, the top teams play the playoff weeks head to head. See [Play
 
 For each keeper, the output shows your title percent, your face-off results, your playoff score and the median sum of your `dollars`. It also shows the players that you win most often and the median price that you pay for each one.
 
-The auctions run in parallel, one process for each CPU core. Each keeper gets the same random seeds, so the comparison between keepers is fair.
+The auctions run in parallel, one process for each CPU core. Each keeper gets the same random seeds, so the comparison between keepers is fair. 2,000 auctions for each keeper take about 5 minutes on 16 cores.
+
+The simulator writes the `simulation_*.csv` files to `output/`. Run `draft_board.py` after it: the board then shows a **Strong groups** panel (the groups of 3 or 4 with the best low end, for the keeper that you pick) and a **Lift** column. Click a group to show only its players.
 
 ### Playoff score
 
@@ -333,7 +340,7 @@ python -m pip install greenlet==3.1.1
 python -m pytest
 ```
 
-The tests are in `tests/`. They cover `valuation.py`, `identity.py`, `playoffs.py`, two parts of `draft_board.py` (the data load and the filter bar), `publish.py`, `auction.py`, `team_score.py` and `matchups.py`. The `publish.py` tests make temporary Git repos, so they need `git` on the `PATH`.
+The tests are in `tests/`. They cover `valuation.py`, `identity.py`, `playoffs.py`, two parts of `draft_board.py` (the data load and the filter bar), `publish.py`, `auction.py`, `team_score.py`, `matchups.py` and `sim_results.py`. The `publish.py` tests make temporary Git repos, so they need `git` on the `PATH`.
 
 ## Roadmap
 

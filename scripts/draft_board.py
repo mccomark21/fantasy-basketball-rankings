@@ -5,7 +5,9 @@ Each player gets an S flag (playoff games) and a Q flag (quality games): green =
 yellow = poor. A short playoff week shows a red X in place of both flags ([flags] in config.toml).
 The stat columns are the categories in [weights]. Positions are the Yahoo positions.
 """
+import json
 from datetime import date
+from html import escape
 
 import pandas as pd
 
@@ -134,8 +136,11 @@ def td(text, v=None, style=None, title=None, cls=None):
     return f"<td{attrs}>{text}</td>"
 
 
-def html_columns(cfg):
-    """(header, numeric sort, align left, cell function) for each column of the HTML table."""
+def html_columns(cfg, lift=False):
+    """(header, numeric sort, align left, cell function) for each column of the HTML table.
+
+    lift: add the Lift column (the board has the auction simulator results).
+    """
     t, f = cfg["board"], cfg["flags"]
     # Quality games: white at the middle of the gray band, full color one band width away
     q_mid = (f["good_quality_games"] + f["poor_quality_games"]) / 2
@@ -157,6 +162,7 @@ def html_columns(cfg):
          else td(f"${r.league_price:.0f}", v=f"{r.league_price:.2f}")),
         ("Diff", True, False, lambda r: td("—", v="-999") if pd.isna(r.surplus)
          else td(f"{r.surplus:+.0f}", v=f"{r.surplus:.2f}", style=shade(r.surplus, 15))),
+        *([("Lift", True, False, lift_cell)] if lift else []),
         ("Sched", True, False, lambda r: td(f"{r.sched_score:.2f}", style=shade(r.sched_score - 1, 0.2))),
         ("Playoff games", True, False, lambda r: td(r.games_wk, v=f"{r.week_score:.3f}",
                                                     style=shade(r.week_score - 1.2, 0.2), title=f"{r.playoff_games} games")),
@@ -169,6 +175,16 @@ def html_columns(cfg):
     ]
 
 
+def lift_cell(r):
+    """Lift for the first keeper. data-lift has the lift for each keeper, so the keeper list can change the cell."""
+    lifts = r.lift if isinstance(r.lift, dict) else {}
+    first = next(iter(lifts.values()), None)
+    data = escape(json.dumps({k: round(v, 1) for k, v in lifts.items()}))
+    text, v = ("—", "-999") if first is None else (f"{first:+.0f}", f"{first:.2f}")
+    style = "" if first is None else f' style="{shade(first, 15)}"'
+    return f'<td class="lift" data-lift="{data}" data-v="{v}"{style}>{text}</td>'
+
+
 def row_open(r):
     """Row start tag. The filter bar reads the team, positions and S and Q flags from it.
 
@@ -179,7 +195,7 @@ def row_open(r):
 
 
 def html_table(df, cfg):
-    cols = html_columns(cfg)
+    cols = html_columns(cfg, lift="lift" in df)
     # Text alignment comes from the column list, so a new column does not need new CSS
     left = [i + 1 for i, (_, _, is_left, _) in enumerate(cols) if is_left]
     style = ", ".join(f"th:nth-child({i}), td:nth-child({i})" for i in left) + " { text-align: left; }"
@@ -210,12 +226,37 @@ def filter_bar(df):
             f'<select id="team" aria-label="Team">{opts}</select>{flags}<span id="count"></span></div>')
 
 
-def write_html(df, cfg):
+def group_panel(groups, top=10):
+    """The strong groups from simulation_groups.csv: a keeper list, and the top groups of 3 or more for each keeper.
+
+    groups is sorted by low (the low end of the title percent). Click a group to show only its players.
+    """
+    keepers = list(dict.fromkeys(groups.keeper))
+    opts = "".join(f'<option value="{escape(k)}">{escape(k)}</option>' for k in keepers)
+    lists = []
+    for i, keeper in enumerate(keepers):
+        best = groups[(groups.keeper == keeper) & (groups["size"] >= 3)].head(top)
+        items = "".join(
+            f'<li><button type="button" data-players="{escape(g.group.replace(" + ", "|"))}" aria-pressed="false">'
+            f'{escape(g.group)}</button> <span>{g.title_pct:.0f}% ±{g.se:.0f} · {g.runs} auctions</span></li>'
+            for g in best.itertuples())
+        lists.append(f'<ol data-keeper="{escape(keeper)}"{" hidden" if i else ""}>{items}</ol>')
+    return ('<section class="groups"><h2>Strong groups</h2>'
+            f'<label>Keeper <select id="keeper" aria-label="Keeper">{opts}</select></label>'
+            "<p>Groups of 3 or 4 players in your core in the auction simulator (auction.py), with your title percent "
+            "± its standard error. The list is sorted by the low end (title % − 2 × error). A group goes with titles. "
+            "It does not cause them. Click a group to show only its players. Lift: your title % with the player "
+            "minus without him.</p>" + "".join(lists) + "</section>")
+
+
+def write_html(df, cfg, groups=None):
+    """groups: simulation_groups.csv, or None if the auction simulator has not run."""
     t = cfg["board"]
     note = f"All {len(df)} players in the projections, sorted by custom rank. Made {date.today():%Y-%m-%d}."
     flags = "<br>".join(f"{flag_html(letter, cls)} {text}" for letter, cls, text in legend(cfg))
     html = (HTML.replace("__TITLE__", TITLE).replace("__NOTE__", note).replace("__FLAGS__", flags)
             .replace("__WEEKS__", ", ".join(weeks(cfg))).replace("__LOW__", str(t["low_games"]))
+            .replace("__GROUPS__", "" if groups is None else group_panel(groups))
             .replace("__FILTERS__", filter_bar(df)).replace("__BODY__", html_table(df, cfg)))
     (OUT / "draft_board.html").write_text(html, encoding="utf-8")
 
@@ -265,6 +306,15 @@ p .flag { margin-right: 6px; }
 .filters button { cursor: pointer; min-width: 36px; }
 .filters button[aria-pressed="true"] { background: var(--q); border-color: var(--q); color: #fff; }
 #count { color: var(--muted); }
+.groups { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.groups h2 { font-size: 16px; margin: 0 0 6px; display: inline; margin-right: 12px; }
+.groups select, .groups button { font: inherit; color: var(--fg); background: var(--bg);
+        border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+.groups p { margin: 6px 0; }
+.groups ol { margin: 4px 0 0; padding-left: 24px; }
+.groups li { margin: 3px 0; }
+.groups li span { color: var(--muted); }
+.groups button[aria-pressed="true"] { background: var(--q); border-color: var(--q); color: #fff; }
 </style>
 </head>
 <body>
@@ -277,6 +327,7 @@ Pos: Yahoo positions (— = not in the Yahoo top 500). Sched: 1.00 = league aver
 Point to a flag to see the reason. Click a column header to sort.
 Pick one or more positions to show players who can play any of them.
 Pick one or more S or Q colors to show players with those flags. A player with an X or no team has no S or Q flags.</p>
+__GROUPS__
 __FILTERS__
 __BODY__
 <script>
@@ -298,6 +349,7 @@ function applyFilters() {
   let shown = 0;
   allRows.forEach(tr => {
     const ok = tr.dataset.name.includes(q)
+      && (!group || group.has(tr.dataset.name.replace(" ⚠", "")))
       && (!team.value || tr.dataset.team === team.value)
       && (!picked.length || tr.dataset.pos.split("/").some(p => picked.includes(p)))
       && flagOk(tr);
@@ -312,6 +364,32 @@ function applyFilters() {
 }));
 search.addEventListener("input", applyFilters);
 team.addEventListener("change", applyFilters);
+
+// Strong groups (only when the auction simulator has run): the keeper list and the group filter
+let group = null;
+const keeper = document.getElementById("keeper");
+const groupButtons = [...document.querySelectorAll(".groups button")];
+function showKeeper() {
+  document.querySelectorAll(".groups ol").forEach(ol => ol.hidden = ol.dataset.keeper !== keeper.value);
+  document.querySelectorAll("td.lift").forEach(td => {
+    const v = JSON.parse(td.dataset.lift)[keeper.value];
+    td.textContent = v == null ? "—" : (v > 0 ? "+" : "") + Math.round(v);
+    td.dataset.v = v == null ? -999 : v;
+    const alpha = v == null ? 0 : Math.min(Math.abs(v) / 15, 1) * 55;
+    td.style.background = `color-mix(in srgb, var(${v > 0 ? "--good" : "--bad"}) ${alpha}%, transparent)`;
+  });
+  groupButtons.forEach(b => b.setAttribute("aria-pressed", "false"));
+  group = null;
+  applyFilters();
+}
+groupButtons.forEach(b => b.addEventListener("click", () => {
+  const on = b.getAttribute("aria-pressed") !== "true";
+  groupButtons.forEach(x => x.setAttribute("aria-pressed", "false"));
+  b.setAttribute("aria-pressed", String(on));
+  group = on ? new Set(b.dataset.players.split("|").map(fold)) : null;
+  applyFilters();
+}));
+if (keeper) keeper.addEventListener("change", showKeeper);
 applyFilters();
 
 document.querySelectorAll("th").forEach(th => {
@@ -336,11 +414,25 @@ document.querySelectorAll("th").forEach(th => {
 """
 
 
+def load_simulation(df):
+    """(df with a lift column, groups) from the auction simulator files, or (df, None) if they are not there."""
+    players, groups = OUT / "simulation_players.csv", OUT / "simulation_groups.csv"
+    if not (players.exists() and groups.exists()):
+        return df, None
+    table = pd.read_csv(players)
+    lifts = {name: dict(zip(rows.keeper, rows.lift)) for name, rows in table.groupby("player")}
+    keepers = list(dict.fromkeys(pd.read_csv(groups).keeper))
+    # The same keeper order in each cell as in the keeper list, so the first value is the first keeper
+    lift = [{k: lifts.get(name, {}).get(k) for k in keepers} for name in df.name]
+    df = df.assign(lift=[{k: v for k, v in d.items() if v is not None} for d in lift])
+    return df, pd.read_csv(groups)
+
+
 def main():
     cfg = load_config()
-    df = load(cfg)
+    df, groups = load_simulation(load(cfg))
     write_markdown(df, cfg)
-    write_html(df, cfg)
+    write_html(df, cfg, groups)
     print(f"Wrote {len(df)} players to draft_board.md and draft_board.html")
 
 

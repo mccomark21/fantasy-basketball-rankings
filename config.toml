@@ -23,7 +23,7 @@ drafts = "data/draft_results.csv"
 
 # Auction simulator: python scripts/auction.py. See the docstring of scripts/auction.py.
 [simulation]
-runs = 500                 # auctions for each keeper
+runs = 2000                # auctions for each keeper (about 5 minutes on 16 CPU cores)
 noise = 0.20               # spread of the random noise on each bot bid and on the nomination order (lognormal sigma)
 seed = 1                   # the same seed gives the same results
 # Your keeper candidates. The simulator runs each one as your keeper and compares the results.

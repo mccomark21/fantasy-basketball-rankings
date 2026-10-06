@@ -24,10 +24,11 @@ from itertools import repeat
 import numpy as np
 import pandas as pd
 
-from common import load_config
+from common import OUT, load_config
 from matchups import face_offs
 from playoffs import playoff_schedule, read_schedule
 from rankings import build_rankings
+from sim_results import group_table, player_table
 from team_score import make_playoffs, open_slots
 
 CHUNKS = 64  # parts of the auctions for the parallel run
@@ -135,16 +136,20 @@ def simulate(pool, cfg, keeper, runs, rng, playoffs=None):
          win_pct is the percent of runs that you win him. price is the median price that you pay.
     """
     scores, mine = _auctions(pool, cfg, keeper, runs, rng, playoffs)
-    return scores, _wins(mine, runs)
+    return scores, _wins(mine[mine.name != keeper], runs)
 
 
 def _auctions(pool, cfg, keeper, runs, rng, playoffs):
-    """(scores, mine): the scores of simulate() and the players that you buy in each run (not the keeper)."""
+    """(scores, mine): the scores of simulate() and the players that you buy in each run.
+
+    mine has name, price, run (the row of scores) and core (True for the keeper and your core players).
+    """
     players = pool.set_index("name")
     scores, sales = [], []
-    for _ in range(runs):
+    for run in range(runs):
         sold = run_auction(pool, cfg, rng, keeper, playoffs)
-        mine = sold.query("team == 0")
+        mine = sold.query("team == 0").assign(run=run)
+        mine["core"] = np.arange(len(mine)) < cfg["simulation"]["core"]  # the same core as _core()
         score = {"dollars": players.dollars[mine.name].sum()}
         if playoffs is not None:
             cores = [_core(players, sold.name[sold.team == t], t, cfg) for t in range(cfg["league"]["teams"])]
@@ -153,7 +158,7 @@ def _auctions(pool, cfg, keeper, runs, rng, playoffs):
             # Each team plays its core and streams its other spots, so the season value of its core gives the seeds
             score.update(face_offs(totals, np.array([core.value.sum() for core in cores]), rng, cfg))
         scores.append(score)
-        sales.append(mine[mine.name != keeper])
+        sales.append(mine.drop(columns="team"))
     return pd.DataFrame(scores), pd.concat(sales)
 
 
@@ -186,14 +191,17 @@ def main():
     # change with the CPU count, so each PC gets the same results. Each keeper gets the same seeds, so each
     # keeper sees the same random numbers, and the comparison is fair.
     parts = [len(part) for part in np.array_split(np.arange(sim["runs"]), CHUNKS)]
-    summary = {}
+    starts = np.cumsum([0, *parts[:-1]])  # the first run number of each part
+    summary, all_runs = {}, []
     with ProcessPoolExecutor(os.cpu_count()) as executor:
         for keeper in sim["keepers"]:
             seeds = np.random.SeedSequence(sim["seed"]).spawn(CHUNKS)
             results = list(executor.map(_auctions, repeat(pool), repeat(cfg), repeat(keeper), parts,
                                         [np.random.default_rng(seed) for seed in seeds], repeat(playoffs)))
-            scores = pd.concat([r[0] for r in results])
-            won = _wins(pd.concat([r[1] for r in results]), sim["runs"])
+            scores = pd.concat([r[0] for r in results], ignore_index=True)
+            mine = pd.concat([r[1].assign(run=r[1].run + start) for r, start in zip(results, starts)])
+            won = _wins(mine[mine.name != keeper], sim["runs"])
+            all_runs.append(mine.join(scores, on="run").rename(columns={"name": "player"}).assign(keeper=keeper))
             summary[keeper] = {"cost": round(pool.set_index("name").league_price[keeper]),
                                "title_pct": 100 * scores.title.mean(),
                                "playoffs_pct": 100 * scores.made_playoffs.mean(),
@@ -209,7 +217,25 @@ def main():
     print("  rr_win_pct: your win percent against the other playoff teams in each playoff week (when you are in).")
     print(f"  playoff_score: the median playoff score of your core ({sim['core']} players) and your streamers.")
     print("  dollars: the median sum of your dollars.")
-    print(pd.DataFrame(summary).T.round(1).to_string())
+    summary = pd.DataFrame(summary).T.rename_axis("keeper")
+    print(summary.round(1).to_string())
+    write_results(summary, pd.concat(all_runs, ignore_index=True), players)
+
+
+def write_results(summary, runs, players):
+    """Write the simulation_*.csv files to output/. runs: one row for each player that you buy in each auction."""
+    OUT.mkdir(exist_ok=True)
+    info = players.set_index("name")[["pos", "team", "dollars", "league_price", "playoff_games", "quality_games"]]
+    summary.round(2).to_csv(OUT / "simulation_summary.csv")
+    order = {k: i for i, k in enumerate(summary.index)}  # the keeper order of config.toml
+    table = player_table(runs).join(info, on="player").sort_values("keeper", key=lambda k: k.map(order), kind="stable")
+    table.round(2).to_csv(OUT / "simulation_players.csv", index=False)
+    groups = group_table(runs).sort_values("keeper", key=lambda k: k.map(order), kind="stable")
+    groups.round(2).to_csv(OUT / "simulation_groups.csv", index=False)
+    cols = ["keeper", "run", "player", "price", "core", "title", "made_playoffs", "rr_win_pct", "playoff", "dollars"]
+    runs[cols].rename(columns={"playoff": "playoff_score"}).round(2).to_csv(OUT / "simulation_runs.csv", index=False)
+    print("\nWrote simulation_summary.csv, simulation_players.csv, simulation_groups.csv and simulation_runs.csv "
+          f"to {OUT}")
 
 
 if __name__ == "__main__":
