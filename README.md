@@ -120,6 +120,7 @@ All settings are in [`config.toml`](config.toml). To apply a change, run the scr
 | Section | Controls |
 |---|---|
 | `[league]` | League size, roster spots, the projections file and the ESPN season. |
+| `[auction]` | The budget, the minimum bid and the bought roster spots for auction dollars. See [Valuation](#valuation). |
 | `[weights]` | The weight of each ranked category. See [`docs/category_weights.md`](docs/category_weights.md). |
 | `[games]` | The penalty for missed games. See [Valuation](#valuation). |
 | `[playoffs]` | The playoff weeks and the value of each week by number of games. |
@@ -188,11 +189,12 @@ The scripts write these files. Do not edit them.
 
 ### Valuation
 
-`valuation.py` calculates the value of each player in 3 steps:
+`valuation.py` calculates the value of each player in 4 steps:
 
 1. **Per-game value.** The sum of the weighted per-game z-scores. The player pool is the top 140 players (14 teams × 10 roster spots).
 2. **Value above replacement.** The per-game value minus the average of the next 14 players.
 3. **Final value.** The value above replacement × (games / 82) ^ `games.power`.
+4. **Auction dollars.** The teams buy the top 140 players by final value (14 teams × `auction.spots`). Each bought player gets `auction.min_bid`. The rest of the $2,800 (14 × `auction.budget`) goes to the bought players in proportion to final value above replacement. For dollars, replacement is the first player who is not bought, so the last bought player costs about the minimum bid. All other players get $0.
 
 For a player below replacement level, the final value is the per-game value above replacement. This rule stops missed games from making a below-replacement player look better.
 
@@ -232,6 +234,7 @@ If your core players play on low-volume days, you can use your adds (5 each week
 | `sched_rank` | The rank of that schedule score, from 1 to 30. |
 | `pg_value` | Per-game value. |
 | `value` | Final value. |
+| `dollars` | Auction dollars. The dollars of all players add up to 14 × $200. |
 | `z_*` | The z-score for each category. |
 
 ### playoff_schedule.csv

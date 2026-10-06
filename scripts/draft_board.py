@@ -74,6 +74,7 @@ def write_markdown(df, cfg):
         "Playoff games": lambda r: r.games_wk,
         "Quality games": lambda r: r.quality_wk,
         "Sched": lambda r: f"{r.sched_score:.2f}",
+        "$": lambda r: f"${r.dollars:.0f}",
     }
     head = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
 
@@ -85,6 +86,7 @@ def write_markdown(df, cfg):
         f"- **Playoff games** and **quality games:** for each week ({', '.join(weeks(cfg))}). The last week is the finals.",
         "- **Pos:** Yahoo positions. — = not in the Yahoo top 500.",
         "- **Sched:** playoff schedule score of the team (1.00 = league average).",
+        f"- **$:** auction dollars (${cfg['auction']['budget']} budget). $0 = not in the top {cfg['league']['teams'] * cfg['auction']['spots']}.",
         f"- ⚠ = projected for fewer than {t['low_games']} games.",
     ]
     start = 1
@@ -152,6 +154,7 @@ def html_columns(cfg):
                                                     title=f"{r.quality_games} quality games")),
         ("Sched", True, False, lambda r: td(f"{r.sched_score:.2f}", style=shade(r.sched_score - 1, 0.2))),
         ("Value", True, False, lambda r: td(f"{r.value:.2f}")),
+        ("$", True, False, lambda r: td(f"${r.dollars:.0f}", v=f"{r.dollars:.2f}")),
     ]
 
 
@@ -259,7 +262,7 @@ p .flag { margin-right: 6px; }
 <p>__FLAGS__</p>
 <p>Stats are per game, colored by z-score. Playoff games and quality games are shown for each week (__WEEKS__).
 Playoff games is colored by week value: 2-game weeks cost the most. Quality games is colored by the total.
-Pos: Yahoo positions (— = not in the Yahoo top 500).Sched: 1.00 = league average. Games is red below __LOW__. ⚠ = fewer than __LOW__ games.
+Pos: Yahoo positions (— = not in the Yahoo top 500). Sched: 1.00 = league average. $: auction dollars. Games is red below __LOW__. ⚠ = fewer than __LOW__ games.
 Point to a flag to see the reason. Click a column header to sort.
 Pick one or more positions to show players who can play any of them.
 Pick one or more S or Q colors to show players with those flags. A player with an X or no team has no S or Q flags.</p>
