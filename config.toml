@@ -5,6 +5,7 @@ teams = 14
 roster_spots = 10          # 6 starters (PG, SG, SF, PF, C, Util) + 4 bench; the player pool is teams x roster_spots
 slots = ["PG", "SG", "SF", "PF", "C"]  # starting slots for one position (Util and bench take any player)
 adds = 5                   # adds each week
+playoff_teams = 8          # teams in the playoff bracket (a power of 2)
 projections = "data/Projections.csv"
 espn_season = 2027         # ESPN uses the year that the season ends
 

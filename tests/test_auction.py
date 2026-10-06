@@ -23,6 +23,12 @@ def pool(*players):
     return pd.DataFrame(players, columns=["name", "pos", "dollars", "league_price", "yahoo_cost"])
 
 
+def with_face_offs(cfg):
+    """cfg with the settings for the face-offs: 2 playoff teams, one playoff week (wk1), 2 categories."""
+    cfg["league"]["playoff_teams"] = 2
+    return {**cfg, "weights": {"pts": 1, "reb": 1}, "playoffs": {"weeks": [{"name": "wk1"}]}}
+
+
 def sold(sales, name):
     return sales.set_index("name").loc[name, ["team", "price"]].tolist()
 
@@ -122,11 +128,11 @@ def test_your_bot_moves_the_money_of_the_stream_spots_to_the_core():
 
 
 def test_your_bot_bids_more_for_a_player_who_fits_your_playoff_schedule():
-    # BOS plays on both playoff days, NY on none. An average bought player plays 2 games, so fit = 1 and 0.5.
+    # BOS plays on both playoff days, NY on none. BOS is the average schedule, so fit = 1 and 0.5.
     days = pd.DataFrame({"week": "wk1", "quality": False, "teams": [["BOS"], ["BOS"]]})
     cfg = config(spots=2)
     players = pool(("X", ANY, 20, 15, 15), ("Y", ANY, 20, 15, 15)).assign(team=["BOS", "NY"], prod=[5.0, 5.0])
-    sales = run_auction(players, cfg, np.random.default_rng(0), playoffs=Playoffs(days, 0.0, 2, cfg))
+    sales = run_auction(players, cfg, np.random.default_rng(0), playoffs=Playoffs(days, 0.0, cfg))
     assert sold(sales, "X") == [0, 16]
     assert sold(sales, "Y") == [1, 11]  # your bid: 20 x 0.5 = 10
 
@@ -135,9 +141,21 @@ def test_simulate_gives_the_playoff_score_of_your_core():
     # Your core is K and A. Both play for BOS on the 2 playoff days, at C and Util.
     # B is your stream spot and does not count.
     days = pd.DataFrame({"week": "wk1", "quality": False, "teams": [["BOS"], ["BOS"]]})
-    cfg = config(spots=3, core=2, slots=["C"])
+    cfg = with_face_offs(config(spots=3, core=2, slots=["C"]))
     players = pool(("K", ANY, 15, 10, 10), ("A", ANY, 30, 20, 20), ("B", ANY, 0, 1, 1),
                    ("C", ANY, 5, 18, 18), ("D", ANY, 1, 9, 9), ("E", ANY, 1, 8, 8))
-    players = players.assign(team="BOS", prod=[3.0, 5.0, 9.0, 1.0, 1.0, 1.0])
-    scores = simulate(players, cfg, "K", runs=3, rng=np.random.default_rng(0), playoffs=Playoffs(days, 0.0, 2, cfg))[0]
+    players = players.assign(team="BOS", prod=[3.0, 5.0, 9.0, 1.0, 1.0, 1.0], stats=[[1.0, 1.0]] * 6, value=1.0)
+    scores = simulate(players, cfg, "K", runs=3, rng=np.random.default_rng(0), playoffs=Playoffs(days, 0.0, cfg, [0.0, 0.0]))[0]
     assert scores.playoff.tolist() == [16] * 3  # (3 + 5) x 2 days
+
+
+def test_simulate_plays_the_playoff_face_offs():
+    # You win A (BOS, big stats). The bot wins B (NY, no playoff games). A has the higher season value.
+    days = pd.DataFrame({"week": "wk1", "quality": False, "teams": [["BOS"]]})
+    cfg = with_face_offs(config(spots=1))
+    players = pool(("A", ANY, 30, 20, 20), ("B", ANY, 5, 18, 18)).assign(
+        team=["BOS", "NY"], prod=[5.0, 5.0], stats=[[100.0, 100.0], [100.0, 100.0]], value=[10.0, 1.0])
+    playoffs = Playoffs(days, 0.0, cfg, [0.0, 0.0])
+    scores = simulate(players, cfg, None, runs=4, rng=np.random.default_rng(0), playoffs=playoffs)[0]
+    assert scores[["made_playoffs", "rr_win_pct", "title"]].to_dict("list") == {
+        "made_playoffs": [True] * 4, "rr_win_pct": [100.0] * 4, "title": [True] * 4}

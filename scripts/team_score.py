@@ -10,36 +10,38 @@
      A streamer stays until the end of the week. There are no adds on a quality day, because few free
      agents play. A streamer gives the production of an average waiver player (the first 14 after the pool).
 """
+import numpy as np
 import pandas as pd
 
 
 def make_playoffs(rankings, days, cfg):
     """(players, playoffs) from build_rankings() and the days of playoffs.playoff_schedule().
 
-    players: rankings with a prod column. playoffs: a Playoffs for these players.
+    players: rankings with prod and stats columns (see Playoffs). playoffs: a Playoffs for these players.
     """
     league, g = cfg["league"], cfg["games"]
     pool_size = league["teams"] * league["roster_spots"]
     ranked = rankings.sort_values("value", ascending=False)
     weights = pd.Series(cfg["weights"])
     std = ranked.iloc[:pool_size][weights.index].std()
-    played = (rankings.games / g["full_season"]).clip(upper=1)
-    players = rankings.assign(prod=(rankings[weights.index] / std * weights).sum(axis=1) * played)
-    waiver = players.loc[ranked.index[pool_size:pool_size + league["teams"]]]
-    bought = ranked.iloc[:league["teams"] * cfg["auction"]["spots"]]
-    return players, Playoffs(days, waiver["prod"].mean(), bought.playoff_games.mean(), cfg)
+    stats = rankings[weights.index].mul((rankings.games / g["full_season"]).clip(upper=1), axis=0)
+    players = rankings.assign(prod=(stats / std * weights).sum(axis=1), stats=stats.values.tolist())
+    waiver = ranked.index[pool_size:pool_size + league["teams"]]
+    return players, Playoffs(days, players.loc[waiver, "prod"].mean(), cfg, stats.loc[waiver].mean().tolist())
 
 
 class Playoffs:
     """The playoff days, with the rules to score a roster.
 
     days: one row for each playoff day with week, quality and teams (playoffs.playoff_schedule()).
-    streamer: production of a free agent for one game. avg_games: playoff games of an average bought player.
+    streamer: production of a free agent for one game.
+    streamer_stats: the stats of a free agent for one game, for week_totals().
     """
 
-    def __init__(self, days, streamer, avg_games, cfg):
+    def __init__(self, days, streamer, cfg, streamer_stats=None):
         self.days = [(d.week, d.quality, set(d.teams)) for d in days.itertuples()]
-        self.streamer, self.avg_games = streamer, avg_games
+        self.teams = sorted(set().union(*(teams for _, _, teams in self.days)))
+        self.streamer, self.streamer_stats = streamer, streamer_stats
         self.stream_spots = cfg["auction"]["spots"] - cfg["simulation"]["core"]
         self.cfg = cfg
 
@@ -48,14 +50,28 @@ class Playoffs:
 
         roster is your core players: a list of dicts with team, prod and pos.
         """
+        return sum(sum(p["prod"] for p in lineup) + streams * self.streamer for _, lineup, streams in self._days(roster))
+
+    def week_totals(self, roster):
+        """Expected category totals for each playoff week: one row for each week, one column for each category.
+
+        Each player in roster also needs stats: his per-game stats x (games / full_season), in [weights] order.
+        """
+        totals = {}
+        for week, lineup, streams in self._days(roster):
+            day = np.sum([p["stats"] for p in lineup], axis=0) + streams * np.asarray(self.streamer_stats)
+            totals[week] = totals.get(week, 0) + day
+        return pd.DataFrame(totals, index=list(self.cfg["weights"])).T
+
+    def _days(self, roster):
+        """For each playoff day: (week, the players who start, the number of streamers who start)."""
         roster = [{**p, "pos": set(p["pos"].split("/"))} for p in roster]
-        total, week, held, adds = 0.0, None, [], 0
+        week, held, adds = None, [], 0
         for i, (name, quality, teams) in enumerate(self.days):
             if name != week:
                 week, held, adds = name, [], self.cfg["league"]["adds"]
             lineup = self._lineup([p for p in roster if p["team"] in teams])
             empty = len(self.cfg["league"]["slots"]) + 1 - len(lineup)  # + 1 for Util
-            total += sum(p["prod"] for p in lineup)
 
             # Streamers: the ones that you hold play first. Then, on a busy day, each add fills one more slot.
             streams = min(empty, sum(team in teams for team in held))
@@ -67,17 +83,21 @@ class Playoffs:
                     held.append(max(sorted(teams), key=lambda t: left[t]))
                     adds -= 1
                     streams += 1
-            total += streams * self.streamer
-        return total
+            yield name, lineup, streams
 
     def fit(self, core, player):
-        """What the player adds to your core, divided by what an average schedule gives (prod x avg_games).
+        """What the player adds to your core, divided by what a player on an average schedule adds.
 
-        1 = an average fit. The value stays inside [simulation] fit_limits.
+        The other player has the same production and any position. His gain is the average for the schedules
+        of all teams. So a weak schedule or a crowded position gives a fit below 1, and a fit of 1 is average.
+        The value stays inside [simulation] fit_limits.
         """
-        gain = self.score(core + [player]) - self.score(core)
+        base = self.score(core)
+        gain = self.score(core + [player]) - base
+        anyone = {**player, "pos": "/".join(self.cfg["league"]["slots"])}
+        average = np.mean([self.score(core + [{**anyone, "team": t}]) for t in self.teams]) - base
         low, high = self.cfg["simulation"]["fit_limits"]
-        return min(high, max(low, gain / (player["prod"] * self.avg_games))) if player["prod"] > 0 else 1.0
+        return min(high, max(low, gain / average)) if average > 0 else low
 
     def _games_left(self, i):
         """Games for each team from day i to the end of its week."""
