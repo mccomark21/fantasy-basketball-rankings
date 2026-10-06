@@ -69,12 +69,12 @@ def write_markdown(df, cfg):
         "Flags": lambda r: "—" if r.no_team else "❌" if r.two_game else f"{dot[r.s_flag]}S {dot[r.q_flag]}Q",
         "Team": lambda r: r.team,
         "Pos": lambda r: r.pos,
+        "$": lambda r: f"${r.dollars:.0f}",
         "Games": lambda r: r.games,
         "Stats": lambda r: r.stats,
         "Playoff games": lambda r: r.games_wk,
         "Quality games": lambda r: r.quality_wk,
         "Sched": lambda r: f"{r.sched_score:.2f}",
-        "$": lambda r: f"${r.dollars:.0f}",
     }
     head = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
 
@@ -144,7 +144,10 @@ def html_columns(cfg):
         ("Player", False, True, lambda r: td(r.player, cls="name")),
         ("Flags", True, True, lambda r: td(*flags_cell(r))),
         ("Team", False, True, lambda r: td(r.team)),
-        ("Pos", False, True, lambda r: td(r.pos)),        ("Games", True, False, lambda r: td(r.games, style=shade(r.games - t["low_games"], 15))),
+        ("Pos", False, True, lambda r: td(r.pos)),
+        ("Value", True, False, lambda r: td(f"{r.value:.2f}")),
+        ("$", True, False, lambda r: td(f"${r.dollars:.0f}", v=f"{r.dollars:.2f}")),
+        ("Games", True, False, lambda r: td(r.games, style=shade(r.games - t["low_games"], 15))),
         *[(label, True, False, stat(cat)) for cat, label in categories(cfg)],
         ("Playoff games", True, False, lambda r: td(r.games_wk, v=f"{r.week_score:.3f}",
                                                     style=shade(r.week_score - 1.2, 0.2), title=f"{r.playoff_games} games")),
@@ -153,8 +156,6 @@ def html_columns(cfg):
                                                     style=shade(r.quality_games - q_mid, q_scale),
                                                     title=f"{r.quality_games} quality games")),
         ("Sched", True, False, lambda r: td(f"{r.sched_score:.2f}", style=shade(r.sched_score - 1, 0.2))),
-        ("Value", True, False, lambda r: td(f"{r.value:.2f}")),
-        ("$", True, False, lambda r: td(f"${r.dollars:.0f}", v=f"{r.dollars:.2f}")),
     ]
 
 
