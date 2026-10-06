@@ -24,7 +24,8 @@ def test_player_table_compares_your_title_percent_with_and_without_each_core_pla
 
     # A is in your core in runs 0 and 1 (2 titles). In runs 2 and 3, A is not in your core (1 title in 2).
     assert table.loc["A", ["core_pct", "title_with", "title_without", "lift"]].tolist() == pytest.approx([50, 100, 50, 50])
-    assert table.loc["A", "price"] == pytest.approx(6)  # median of $1 and $11
+    # A costs $1 in run 0 and $11 in run 1
+    assert table.loc["A", ["min_price", "median_price", "max_price"]].tolist() == pytest.approx([1, 6, 11])
     assert "K" not in table.index  # the keeper is in each core
     assert "S" not in table.index  # a stream player is not in the core
     assert table.keeper.unique().tolist() == ["K"]

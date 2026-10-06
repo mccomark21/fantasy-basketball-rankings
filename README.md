@@ -176,7 +176,7 @@ The scripts write these files. Do not edit them.
 | `output/draft_board.html` | The Playoff Draft Board: one sortable table of all players in the projections, with Yahoo positions and S, Q and X flags. Open it in a browser. |
 | `output/draft_board.md` | The Playoff Draft Board as Markdown. |
 | `output/simulation_summary.csv` | The auction simulator: one row for each keeper (title %, playoff results, playoff score, dollars). |
-| `output/simulation_players.csv` | The auction simulator: for each keeper, the players in your core, how often, the price and the lift (title % with the player − without him). |
+| `output/simulation_players.csv` | The auction simulator: for each keeper, the players in your core, how often, the lowest, median and highest price that you pay, and the lift (title % with the player − without him). |
 | `output/simulation_groups.csv` | The auction simulator: groups of 2 to 4 players in your core, with your title %, its standard error and the low end (title % − 2 × error). |
 | `output/simulation_runs.csv` | The auction simulator: one row for each player that you buy in each auction, with the results of that auction. |
 
