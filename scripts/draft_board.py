@@ -10,7 +10,8 @@ from datetime import date
 
 import pandas as pd
 
-from common import OUT, load_config, q_cols, week_value, weeks
+from common import OUT, load_config, weeks
+from playoffs import join_teams, playoff_schedule, read_schedule, schedule_columns
 
 TITLE = "Playoff Draft Board"
 # Column label for a category. A category that is not here uses its name in capitals.
@@ -25,30 +26,25 @@ def categories(cfg):
 
 def load(cfg):
     t, f = cfg["board"], cfg["flags"]
-    week_cols = weeks(cfg)
-    df = pd.read_csv(OUT / "rankings.csv")
+    df = pd.read_csv(OUT / "rankings.csv").drop(columns=schedule_columns(cfg))
+    df = join_teams(df, playoff_schedule(read_schedule(), cfg)[0], cfg)
     # A player with no team has no playoff schedule, so the player gets no flags
     df["no_team"] = df.team.isna()
     df["team"] = df.team.fillna("—")
 
     df["player"] = df.name + df.games.lt(t["low_games"]).map({True: " ⚠", False: ""})
     df["stats"] = df[[cat for cat, _ in categories(cfg)]].apply(lambda r: " / ".join(f"{v:.1f}" for v in r), axis=1)
-    df["games_wk"] = df[week_cols].astype(str).agg("-".join, axis=1)
-    df["quality_wk"] = df[q_cols(cfg)].astype(str).agg("-".join, axis=1)
-    # Playoff games: average week value (a 2-game week costs more than 1 game)
-    df["week_score"] = df[week_cols].apply(lambda col: col.map(lambda g: week_value(g, cfg))).mean(axis=1)
 
     # Flags: "good", "avg" or "warn". A short week replaces the S and Q flags with an X.
     def grade(n, good, poor):
         return "good" if n >= good else "warn" if n <= poor else "avg"
 
-    short = df[week_cols].le(f["avoid_week_games"])
-    df["two_game"] = short.any(axis=1) & ~df.no_team
+    df["two_game"] = df.short_weeks != ""
     df["s_flag"] = [grade(g, f["good_playoff_games"], f["poor_playoff_games"]) for g in df.playoff_games]
     df["q_flag"] = [grade(q, f["good_quality_games"], f["poor_quality_games"]) for q in df.quality_games]
     df["s_note"] = df.playoff_games.astype(str) + " playoff games"
     df["q_note"] = df.quality_games.astype(str) + " quality games"
-    df["x_note"] = [", ".join(f"{df.at[i, w]}-game {w}" for w in week_cols if row[w]) for i, row in short.iterrows()]
+    df["x_note"] = df.short_weeks
     return df
 
 
@@ -135,7 +131,7 @@ def td(text, v=None, style=None, title=None, cls=None):
 
 def html_columns(cfg):
     """(header, numeric sort, align left, cell function) for each column of the HTML table."""
-    t, f, last_q = cfg["board"], cfg["flags"], q_cols(cfg)[-1]
+    t, f = cfg["board"], cfg["flags"]
     # Quality games: white at the middle of the gray band, full color one band width away
     q_mid = (f["good_quality_games"] + f["poor_quality_games"]) / 2
     q_scale = f["good_quality_games"] - f["poor_quality_games"]
@@ -154,7 +150,7 @@ def html_columns(cfg):
         ("Playoff games", True, False, lambda r: td(r.games_wk, v=f"{r.week_score:.3f}",
                                                     style=shade(r.week_score - 1.2, 0.2), title=f"{r.playoff_games} games")),
         # Finals quality games break ties
-        ("Quality games", True, False, lambda r: td(r.quality_wk, v=f"{r.quality_games + 0.01 * getattr(r, last_q):.2f}",
+        ("Quality games", True, False, lambda r: td(r.quality_wk, v=f"{r.quality_games + 0.01 * r.finals_quality:.2f}",
                                                     style=shade(r.quality_games - q_mid, q_scale),
                                                     title=f"{r.quality_games} quality games")),
         ("Sched", True, False, lambda r: td(f"{r.sched_score:.2f}", style=shade(r.sched_score - 1, 0.2))),

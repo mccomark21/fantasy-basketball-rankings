@@ -1,4 +1,4 @@
-"""Paths, config, playoff-week and name helpers that more than one script uses."""
+"""Paths, config, playoff week names and name helpers that more than one script uses."""
 import re
 import tomllib
 import unicodedata
@@ -16,16 +16,6 @@ def load_config():
 def weeks(cfg):
     """Names of the playoff weeks, for example ["wk19", "wk20", "wk21"]. Each name is a column in rankings.csv."""
     return [w["name"] for w in cfg["playoffs"]["weeks"]]
-
-
-def q_cols(cfg):
-    """Quality-game column for each playoff week in rankings.csv."""
-    return ["q_" + w for w in weeks(cfg)]
-
-
-def week_value(games, cfg):
-    """Value of one playoff week with this number of games. A game count not in the table is linear."""
-    return cfg["playoffs"]["week_value"].get(str(games), games / 3)
 
 
 def name_key(name):
