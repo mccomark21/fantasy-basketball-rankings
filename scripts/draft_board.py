@@ -69,11 +69,12 @@ def write_markdown(df, cfg):
         "Flags": lambda r: "—" if r.no_team else "❌" if r.two_game else f"{dot[r.s_flag]}S {dot[r.q_flag]}Q",
         "Team": lambda r: r.team,
         "Pos": lambda r: r.pos,
-        "Games": lambda r: r.games,
-        "Stats": lambda r: r.stats,
+        "$": lambda r: f"${r.dollars:.0f}",
+        "Sched": lambda r: f"{r.sched_score:.2f}",
         "Playoff games": lambda r: r.games_wk,
         "Quality games": lambda r: r.quality_wk,
-        "Sched": lambda r: f"{r.sched_score:.2f}",
+        "Games": lambda r: r.games,
+        "Stats": lambda r: r.stats,
     }
     head = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
 
@@ -85,6 +86,7 @@ def write_markdown(df, cfg):
         f"- **Playoff games** and **quality games:** for each week ({', '.join(weeks(cfg))}). The last week is the finals.",
         "- **Pos:** Yahoo positions. — = not in the Yahoo top 500.",
         "- **Sched:** playoff schedule score of the team (1.00 = league average).",
+        f"- **$:** auction dollars (${cfg['auction']['budget']} budget). $0 = not in the top {cfg['league']['teams'] * cfg['auction']['spots']}.",
         f"- ⚠ = projected for fewer than {t['low_games']} games.",
     ]
     start = 1
@@ -142,16 +144,18 @@ def html_columns(cfg):
         ("Player", False, True, lambda r: td(r.player, cls="name")),
         ("Flags", True, True, lambda r: td(*flags_cell(r))),
         ("Team", False, True, lambda r: td(r.team)),
-        ("Pos", False, True, lambda r: td(r.pos)),        ("Games", True, False, lambda r: td(r.games, style=shade(r.games - t["low_games"], 15))),
-        *[(label, True, False, stat(cat)) for cat, label in categories(cfg)],
+        ("Pos", False, True, lambda r: td(r.pos)),
+        ("Value", True, False, lambda r: td(f"{r.value:.2f}")),
+        ("$", True, False, lambda r: td(f"${r.dollars:.0f}", v=f"{r.dollars:.2f}")),
+        ("Sched", True, False, lambda r: td(f"{r.sched_score:.2f}", style=shade(r.sched_score - 1, 0.2))),
         ("Playoff games", True, False, lambda r: td(r.games_wk, v=f"{r.week_score:.3f}",
                                                     style=shade(r.week_score - 1.2, 0.2), title=f"{r.playoff_games} games")),
         # Finals quality games break ties
         ("Quality games", True, False, lambda r: td(r.quality_wk, v=f"{r.quality_games + 0.01 * r.finals_quality:.2f}",
                                                     style=shade(r.quality_games - q_mid, q_scale),
                                                     title=f"{r.quality_games} quality games")),
-        ("Sched", True, False, lambda r: td(f"{r.sched_score:.2f}", style=shade(r.sched_score - 1, 0.2))),
-        ("Value", True, False, lambda r: td(f"{r.value:.2f}")),
+        ("Games", True, False, lambda r: td(r.games, style=shade(r.games - t["low_games"], 15))),
+        *[(label, True, False, stat(cat)) for cat, label in categories(cfg)],
     ]
 
 
@@ -259,7 +263,7 @@ p .flag { margin-right: 6px; }
 <p>__FLAGS__</p>
 <p>Stats are per game, colored by z-score. Playoff games and quality games are shown for each week (__WEEKS__).
 Playoff games is colored by week value: 2-game weeks cost the most. Quality games is colored by the total.
-Pos: Yahoo positions (— = not in the Yahoo top 500).Sched: 1.00 = league average. Games is red below __LOW__. ⚠ = fewer than __LOW__ games.
+Pos: Yahoo positions (— = not in the Yahoo top 500). Sched: 1.00 = league average. $: auction dollars. Games is red below __LOW__. ⚠ = fewer than __LOW__ games.
 Point to a flag to see the reason. Click a column header to sort.
 Pick one or more positions to show players who can play any of them.
 Pick one or more S or Q colors to show players with those flags. A player with an X or no team has no S or Q flags.</p>

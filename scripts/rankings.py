@@ -60,7 +60,7 @@ def main():
 
     df = build_rankings(cfg, teams)
     cols = (["rank", "pg_rank", "name", "team", "pos", "games", "mpg", *STATS, *schedule_columns(cfg),
-             "pg_value", "value"] + ["z_" + c for c in cfg["weights"]] + ["player_id"])
+             "pg_value", "value", "dollars"] + ["z_" + c for c in cfg["weights"]] + ["player_id"])
     df[cols].round(2).to_csv(OUT / "rankings.csv", index=False)
 
     pool_size = cfg["league"]["teams"] * cfg["league"]["roster_spots"]
@@ -71,7 +71,7 @@ def main():
         if len(missing):
             print(message)
             print(missing[["player_id", "name", "rank"]].to_string(index=False), "\n")
-    print(df[["rank", "pg_rank", "name", "team", "pos", "games", *weeks(cfg), "quality_games", "sched_score", "value"]].head(30).round(2).to_string(index=False))
+    print(df[["rank", "pg_rank", "name", "team", "pos", "games", *weeks(cfg), "quality_games", "sched_score", "value", "dollars"]].head(30).round(2).to_string(index=False))
     print(f"\nWrote {len(df)} players to rankings.csv")
 
 

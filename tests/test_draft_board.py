@@ -22,12 +22,12 @@ def test_board_gets_every_column_from_build_rankings(monkeypatch):
     players = pd.DataFrame({
         "name": ["A", "B"], "team": ["BOS", None], "games": [70, 50], "pts": [20.0, 10.0],
         "playoff_games": [11, 0], "quality_games": [1, 0], "short_weeks": ["", ""],
-        "dollars": [40.123456, 1.0],  # a new column that the board does not use yet
+        "extra": [40.123456, 1.0],  # a new column that the board does not use yet
     })
     monkeypatch.setattr(draft_board, "build_rankings", lambda c: players.copy())
 
     df = draft_board.load(cfg)
-    assert df.dollars.tolist() == [40.123456, 1.0]  # the board gets the new column, not rounded
+    assert df.extra.tolist() == [40.123456, 1.0]  # the board gets the new column, not rounded
     assert df.team.tolist() == ["BOS", "—"]
     assert df.player.tolist() == ["A", "B ⚠"]
 
