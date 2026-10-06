@@ -105,7 +105,8 @@ def shade(x, scale):
 
 
 def flag_html(letter, flag, note=""):
-    return f'<span class="flag {flag}" title="{note}">{letter}</span>'
+    title = f' title="{note}"' if note else ""
+    return f'<span class="flag {flag}"{title}>{letter}</span>'
 
 
 def flags_cell(r):
@@ -154,30 +155,45 @@ def html_columns(cfg):
     ]
 
 
+def row_open(r):
+    """Row start tag. The filter bar reads the team, positions and S and Q flags from it.
+
+    A player with an X or no team has no S or Q flags.
+    """
+    s, q = ("", "") if r.no_team or r.two_game else (r.s_flag, r.q_flag)
+    return f'<tr data-team="{r.team}" data-pos="{r.pos}" data-s="{s}" data-q="{q}">'
+
+
 def html_table(df, cfg):
     cols = html_columns(cfg)
     # Text alignment comes from the column list, so a new column does not need new CSS
     left = [i + 1 for i, (_, _, is_left, _) in enumerate(cols) if is_left]
     style = ", ".join(f"th:nth-child({i}), td:nth-child({i})" for i in left) + " { text-align: left; }"
     ths = "".join(f'<th data-num="{int(num)}">{h}</th>' for h, num, _, _ in cols)
-    # The filter bar reads the team and positions from these attributes
-    rows = [f'<tr data-team="{r.team}" data-pos="{r.pos}">' + "".join(fn(r) for *_, fn in cols) + "</tr>"
-            for r in df.itertuples()]
+    rows = [row_open(r) + "".join(fn(r) for *_, fn in cols) + "</tr>" for r in df.itertuples()]
     return (f"<style>{style}</style>\n"
             f'<div class="wrap"><table>\n<thead><tr>{ths}</tr></thead>\n<tbody>\n'
             + "\n".join(rows) + "\n</tbody>\n</table></div>")
 
 
 def filter_bar(df):
-    """Search box, position buttons (pick 0 or more) and team list above the table."""
+    """Search box, position buttons, team list and S and Q flag buttons above the table. Pick 0 or more buttons."""
     pos = "".join(f'<button type="button" data-pos="{p}" aria-pressed="false">{p}</button>'
                   for p in ("PG", "SG", "SF", "PF", "C"))
+    names = {"s": "Playoff games", "q": "Quality games"}
+    colors = {"good": "green", "avg": "gray", "warn": "yellow"}
+    flags = "".join(
+        f'<span class="flags" role="group" aria-label="{names[f]} flag">' + "".join(
+            f'<button type="button" data-flag="{f}" data-grade="{g}" aria-pressed="false" '
+            f'aria-label="{names[f]}: {c}" title="{names[f]}: {c}">{flag_html(f.upper(), g)}</button>'
+            for g, c in colors.items()) + "</span>"
+        for f in names)
     # "—" (no team) goes last
     teams = sorted(df.team.unique(), key=lambda x: (x == "—", x))
     opts = '<option value="">All teams</option>' + "".join(f'<option value="{x}">{x}</option>' for x in teams)
     return (f'<div class="filters"><input id="search" type="search" placeholder="Search players" aria-label="Search players">'
             f'<span class="pos" role="group" aria-label="Positions">{pos}</span>'
-            f'<select id="team" aria-label="Team">{opts}</select><span id="count"></span></div>')
+            f'<select id="team" aria-label="Team">{opts}</select>{flags}<span id="count"></span></div>')
 
 
 def write_html(df, cfg):
@@ -228,7 +244,10 @@ p .flag { margin-right: 6px; }
 .filters input, .filters select, .filters button { font: inherit; color: var(--fg); background: var(--bg);
         border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
 .filters input { width: 200px; }
-.filters .pos { display: inline-flex; gap: 4px; }
+.filters .pos, .filters .flags { display: inline-flex; gap: 4px; }
+.filters .flags { align-self: stretch; }
+.filters .flags button { min-width: 0; padding: 0 4px; display: inline-flex; align-items: center; }
+.filters .flags .flag { margin: 0; }
 .filters button { cursor: pointer; min-width: 36px; }
 .filters button[aria-pressed="true"] { background: var(--q); border-color: var(--q); color: #fff; }
 #count { color: var(--muted); }
@@ -242,30 +261,38 @@ p .flag { margin-right: 6px; }
 Playoff games is colored by week value: 2-game weeks cost the most. Quality games is colored by the total.
 Pos: Yahoo positions (— = not in the Yahoo top 500).Sched: 1.00 = league average. Games is red below __LOW__. ⚠ = fewer than __LOW__ games.
 Point to a flag to see the reason. Click a column header to sort.
-Pick one or more positions to show players who can play any of them.</p>
+Pick one or more positions to show players who can play any of them.
+Pick one or more S or Q colors to show players with those flags. A player with an X or no team has no S or Q flags.</p>
 __FILTERS__
 __BODY__
 <script>
 // Search ignores case and accents, so "jokic" finds "Jokić"
 const fold = s => s.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase();
 const search = document.getElementById("search"), team = document.getElementById("team");
-const posButtons = [...document.querySelectorAll(".filters button")];
+const posButtons = [...document.querySelectorAll(".filters .pos button")];
+const flagButtons = [...document.querySelectorAll(".filters .flags button")];
+const pressed = bs => bs.filter(b => b.getAttribute("aria-pressed") === "true");
 const allRows = [...document.querySelectorAll("tbody tr")];
 allRows.forEach(tr => tr.dataset.name = fold(tr.querySelector(".name").textContent));
 function applyFilters() {
   const q = fold(search.value.trim());
-  const picked = posButtons.filter(b => b.getAttribute("aria-pressed") === "true").map(b => b.dataset.pos);
+  const picked = pressed(posButtons).map(b => b.dataset.pos);
+  // For each flag (S, Q) with a color picked, the row flag must be one of the picked colors
+  const grades = Object.fromEntries(["s", "q"].map(f =>
+    [f, pressed(flagButtons).filter(b => b.dataset.flag === f).map(b => b.dataset.grade)]));
+  const flagOk = tr => Object.entries(grades).every(([f, g]) => !g.length || g.includes(tr.dataset[f]));
   let shown = 0;
   allRows.forEach(tr => {
     const ok = tr.dataset.name.includes(q)
       && (!team.value || tr.dataset.team === team.value)
-      && (!picked.length || tr.dataset.pos.split("/").some(p => picked.includes(p)));
+      && (!picked.length || tr.dataset.pos.split("/").some(p => picked.includes(p)))
+      && flagOk(tr);
     tr.hidden = !ok;
     shown += ok;
   });
   document.getElementById("count").textContent = `${shown} of ${allRows.length} players`;
 }
-posButtons.forEach(b => b.addEventListener("click", () => {
+[...posButtons, ...flagButtons].forEach(b => b.addEventListener("click", () => {
   b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") === "true" ? "false" : "true");
   applyFilters();
 }));
