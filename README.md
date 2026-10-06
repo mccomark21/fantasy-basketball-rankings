@@ -88,9 +88,30 @@ python scripts/fetch_data.py   # Download rosters and schedule. Run again after 
 python scripts/fetch_yahoo.py  # Download Yahoo positions, auction prices and ADP.
 python scripts/rankings.py     # Write output/rankings.csv and output/playoff_schedule.csv.
 python scripts/draft_board.py  # Write output/draft_board.md and output/draft_board.html.
+python scripts/publish.py      # Optional. Put the board on GitHub Pages.
 ```
 
 Open `output/draft_board.html` in a browser.
+
+### Publish the board
+
+`publish.py` puts the board on GitHub Pages, so you can open it on a phone during the auction:
+
+```
+python scripts/publish.py      # Push output/draft_board.html to the gh-pages branch.
+```
+
+The page is at `https://mccomark21.github.io/fantasy-basketball-rankings/`. GitHub can take a few minutes to show a new board.
+
+The published page is public. Anyone with the URL can see it. GitHub Pages has no private sites on this plan.
+
+The script does not change your working tree or your current branch. It replaces the one commit on `gh-pages` each time, so old boards do not stay in the repo.
+
+The first run of `publish.py` makes the `gh-pages` branch. Then tell GitHub to serve that branch:
+
+```
+gh api -X POST repos/mccomark21/fantasy-basketball-rankings/pages -f "source[branch]=gh-pages" -f "source[path]=/"
+```
 
 ## Configuration
 
@@ -119,12 +140,13 @@ scripts/
   identity.py             Links each player to an ESPN team and a Yahoo row (used by rankings.py)
   playoffs.py             Playoff-week rules: games, quality games, schedule score, short weeks
   draft_board.py          Writes output/draft_board.html and output/draft_board.md
+  publish.py              Pushes the draft board to GitHub Pages
   common.py               Shared helpers: paths, config, playoff week names and names
 data/                     Inputs (not tracked by Git)
 output/                   Generated files (not tracked by Git)
 docs/
   category_weights.md     How the category weights were calculated
-tests/                    Tests for valuation.py, identity.py, playoffs.py and draft_board.py
+tests/                    Tests for valuation.py, identity.py, playoffs.py, draft_board.py and publish.py
 ```
 
 ### Data files
@@ -157,6 +179,7 @@ The scripts write these files. Do not edit them.
 | Change a playoff-week rule (week value, quality days, schedule score, short weeks) | [`scripts/playoffs.py`](scripts/playoffs.py) |
 | Add a column to the rankings | [`scripts/rankings.py`](scripts/rankings.py) |
 | Change the layout or the columns of the draft board | [`scripts/draft_board.py`](scripts/draft_board.py) |
+| Publish the board for use on a phone | `python scripts/publish.py`. See [Publish the board](#publish-the-board). |
 | Fix a player with no team or no Yahoo data | `data/name_overrides.csv`. See [Players who do not match](#players-who-do-not-match). |
 | Read why the weights have their values | [`docs/category_weights.md`](docs/category_weights.md) |
 | Find planned work | [GitHub issues](https://github.com/mccomark21/fantasy-basketball-rankings/issues) |
@@ -262,7 +285,7 @@ python -m pip install greenlet==3.1.1
 python -m pytest
 ```
 
-The tests are in `tests/`. They cover `valuation.py`, `identity.py`, `playoffs.py` and two parts of `draft_board.py`: the data load and the filter bar.
+The tests are in `tests/`. They cover `valuation.py`, `identity.py`, `playoffs.py`, two parts of `draft_board.py` (the data load and the filter bar) and `publish.py`. The `publish.py` tests make temporary Git repos, so they need `git` on the `PATH`.
 
 ## Roadmap
 
