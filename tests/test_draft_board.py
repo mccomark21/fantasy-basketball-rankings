@@ -57,3 +57,16 @@ def test_row_gives_flags_to_the_filter_bar():
     # A player with an X or no team has no S or Q flags. An S or Q filter hides the player.
     assert 'data-s="" data-q=""' in draft_board.row_open(row(two_game=True))
     assert 'data-s="" data-q=""' in draft_board.row_open(row(no_team=True))
+
+
+def test_league_price_and_diff_come_after_dollars_and_sort_a_missing_price_last():
+    cfg = {"weights": {"pts": 1.0}, "board": {"low_games": 60},
+           "flags": {"good_quality_games": 3, "poor_quality_games": 1}}
+    cols = {h: fn for h, _, _, fn in draft_board.html_columns(cfg)}
+    assert list(cols)[list(cols).index("$"):][:4] == ["$", "League $", "Diff", "Sched"]
+
+    bargain = pd.Series({"league_price": 20.0, "surplus": 11.9})
+    assert cols["League $"](bargain) == '<td data-v="20.00">$20</td>'
+    assert cols["Diff"](bargain).endswith('>+12</td>') and "var(--good)" in cols["Diff"](bargain)
+    unknown = pd.Series({"league_price": float("nan"), "surplus": float("nan")})
+    assert cols["League $"](unknown) == cols["Diff"](unknown) == '<td data-v="-999">—</td>'
