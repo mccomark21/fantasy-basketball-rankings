@@ -89,6 +89,7 @@ python scripts/fetch_yahoo.py  # Download Yahoo positions, auction prices and AD
 python scripts/rankings.py     # Write output/rankings.csv and output/playoff_schedule.csv.
 python scripts/draft_board.py  # Write output/draft_board.md and output/draft_board.html.
 python scripts/publish.py      # Optional. Put the board on GitHub Pages.
+python scripts/auction.py      # Optional. Simulate the auction for each keeper candidate.
 ```
 
 Open `output/draft_board.html` in a browser.
@@ -119,7 +120,7 @@ All settings are in [`config.toml`](config.toml). To apply a change, run the scr
 
 | Section | Controls |
 |---|---|
-| `[league]` | League size, roster spots, the projections file and the ESPN season. |
+| `[league]` | League size, roster spots, the position slots, the projections file and the ESPN season. |
 | `[auction]` | The budget, the minimum bid and the bought roster spots for auction dollars. See [Valuation](#valuation). |
 | `[weights]` | The weight of each ranked category. See [`docs/category_weights.md`](docs/category_weights.md). |
 | `[games]` | The penalty for missed games. See [Valuation](#valuation). |
@@ -127,6 +128,7 @@ All settings are in [`config.toml`](config.toml). To apply a change, run the scr
 | `[quality_games]` | The low-volume day limit and the bonus for each quality game. |
 | `[board]` | The low-games mark and the tiers in the Markdown board. |
 | `[flags]` | The limits that make a draft board flag green, gray, yellow or a red X. |
+| `[simulation]` | The auction simulator: the number of runs, the bid noise, the seed and your keeper candidates. See [Auction simulator](#auction-simulator). |
 
 ## Project structure
 
@@ -142,12 +144,13 @@ scripts/
   playoffs.py             Playoff-week rules: games, quality games, schedule score, short weeks
   draft_board.py          Writes output/draft_board.html and output/draft_board.md
   publish.py              Pushes the draft board to GitHub Pages
+  auction.py              Simulates the auction many times for each keeper candidate
   common.py               Shared helpers: paths, config, playoff week names and names
 data/                     Inputs (not tracked by Git)
 output/                   Generated files (not tracked by Git)
 docs/
   category_weights.md     How the category weights were calculated
-tests/                    Tests for valuation.py, identity.py, playoffs.py, draft_board.py and publish.py
+tests/                    Tests for valuation.py, identity.py, playoffs.py, draft_board.py, publish.py and auction.py
 ```
 
 ### Data files
@@ -199,6 +202,18 @@ The scripts write these files. Do not edit them.
 For a player below replacement level, the final value is the per-game value above replacement. This rule stops missed games from making a below-replacement player look better.
 
 The playoff schedule does not change the final value. The schedule columns and the draft board flags are for information only.
+
+### Auction simulator
+
+`auction.py` runs the 14-team auction `simulation.runs` times for each keeper in `simulation.keepers`. Team 0 is your team. The other 13 teams are bots.
+
+- Bots: a bot's maximum bid starts at `league_price` and moves to `yahoo_cost` as the roster spots fill. Each bid has random noise.
+- Your bot: it bids up to your `dollars`.
+- Rules: $200 budget, 10 spots, $1 minimum bid. A maximum bid leaves $1 for each other empty spot. A team bids only if it can still fill PG, SG, SF, PF and C.
+- Price: the winner pays the second-highest maximum bid + $1.
+- Your keeper costs his `league_price` and takes one spot. The simulation ignores the other teams' keepers.
+
+For each keeper, the output shows the range of your team score (the sum of your `dollars`). It also shows the players that you win most often and the median price that you pay for each one. The team score does not use the playoff schedule yet.
 
 ### Schedule score
 
@@ -288,7 +303,7 @@ python -m pip install greenlet==3.1.1
 python -m pytest
 ```
 
-The tests are in `tests/`. They cover `valuation.py`, `identity.py`, `playoffs.py`, two parts of `draft_board.py` (the data load and the filter bar) and `publish.py`. The `publish.py` tests make temporary Git repos, so they need `git` on the `PATH`.
+The tests are in `tests/`. They cover `valuation.py`, `identity.py`, `playoffs.py`, two parts of `draft_board.py` (the data load and the filter bar), `publish.py` and `auction.py`. The `publish.py` tests make temporary Git repos, so they need `git` on the `PATH`.
 
 ## Roadmap
 
