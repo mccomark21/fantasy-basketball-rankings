@@ -40,3 +40,20 @@ def test_position_buttons_use_the_yahoo_order():
 def test_team_options_are_sorted_with_no_team_last():
     html = filter_bar(DF)
     assert re.findall(r'<option value="([^"]*)"', html) == ["", "BOS", "NYK", "—"]
+
+
+def test_flag_buttons_give_green_gray_yellow_for_s_and_q():
+    html = filter_bar(DF)
+    assert re.findall(r'data-flag="(\w)" data-grade="(\w+)"', html) == [
+        ("s", "good"), ("s", "avg"), ("s", "warn"), ("q", "good"), ("q", "avg"), ("q", "warn")]
+
+
+def test_row_gives_flags_to_the_filter_bar():
+    def row(**kw):
+        base = dict(team="BOS", pos="PG", no_team=False, two_game=False, s_flag="good", q_flag="warn")
+        return pd.Series({**base, **kw})
+
+    assert draft_board.row_open(row()) == '<tr data-team="BOS" data-pos="PG" data-s="good" data-q="warn">'
+    # A player with an X or no team has no S or Q flags. An S or Q filter hides the player.
+    assert 'data-s="" data-q=""' in draft_board.row_open(row(two_game=True))
+    assert 'data-s="" data-q=""' in draft_board.row_open(row(no_team=True))
