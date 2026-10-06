@@ -70,11 +70,11 @@ def write_markdown(df, cfg):
         "Team": lambda r: r.team,
         "Pos": lambda r: r.pos,
         "$": lambda r: f"${r.dollars:.0f}",
-        "Games": lambda r: r.games,
-        "Stats": lambda r: r.stats,
+        "Sched": lambda r: f"{r.sched_score:.2f}",
         "Playoff games": lambda r: r.games_wk,
         "Quality games": lambda r: r.quality_wk,
-        "Sched": lambda r: f"{r.sched_score:.2f}",
+        "Games": lambda r: r.games,
+        "Stats": lambda r: r.stats,
     }
     head = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
 
@@ -147,15 +147,15 @@ def html_columns(cfg):
         ("Pos", False, True, lambda r: td(r.pos)),
         ("Value", True, False, lambda r: td(f"{r.value:.2f}")),
         ("$", True, False, lambda r: td(f"${r.dollars:.0f}", v=f"{r.dollars:.2f}")),
-        ("Games", True, False, lambda r: td(r.games, style=shade(r.games - t["low_games"], 15))),
-        *[(label, True, False, stat(cat)) for cat, label in categories(cfg)],
+        ("Sched", True, False, lambda r: td(f"{r.sched_score:.2f}", style=shade(r.sched_score - 1, 0.2))),
         ("Playoff games", True, False, lambda r: td(r.games_wk, v=f"{r.week_score:.3f}",
                                                     style=shade(r.week_score - 1.2, 0.2), title=f"{r.playoff_games} games")),
         # Finals quality games break ties
         ("Quality games", True, False, lambda r: td(r.quality_wk, v=f"{r.quality_games + 0.01 * r.finals_quality:.2f}",
                                                     style=shade(r.quality_games - q_mid, q_scale),
                                                     title=f"{r.quality_games} quality games")),
-        ("Sched", True, False, lambda r: td(f"{r.sched_score:.2f}", style=shade(r.sched_score - 1, 0.2))),
+        ("Games", True, False, lambda r: td(r.games, style=shade(r.games - t["low_games"], 15))),
+        *[(label, True, False, stat(cat)) for cat, label in categories(cfg)],
     ]
 
 
