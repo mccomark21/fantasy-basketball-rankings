@@ -1,6 +1,7 @@
 """Build custom fantasy rankings from Projections.csv and config.toml.
 
 valuation.py calculates the value of each player (z-scores, replacement level, games played).
+market.py gives the price of each player in this league's auction. surplus = dollars - league_price.
 The playoff schedule does not change the value. The schedule columns are for information only.
 Output: rankings.csv. draft_board.py calls build_rankings() to get all the columns.
 """
@@ -8,6 +9,7 @@ import pandas as pd
 
 from common import DATA, OUT, ROOT, load_config, weeks
 from identity import link_players
+from market import league_prices
 from playoffs import join_teams, playoff_schedule, read_schedule, schedule_columns, schedule_grid
 from valuation import value_players
 
@@ -30,8 +32,11 @@ def load_players(cfg):
         df[cat] = calc(df) / df.games
     df["mpg"] = df.minutes / df.games
 
-    links = link_players(df, pd.read_csv(DATA / "rosters.csv"), pd.read_csv(DATA / "yahoo_players.csv"),
+    yahoo = pd.read_csv(DATA / "yahoo_players.csv")
+    links = link_players(df, pd.read_csv(DATA / "rosters.csv"), yahoo,
                          pd.read_csv(DATA / "name_overrides.csv", dtype=str).fillna(""))
+    prices = league_prices(yahoo, pd.read_csv(ROOT / cfg["market"]["drafts"]), cfg)
+    links["league_price"] = links.yahoo_id.map(dict(zip(yahoo.yahoo_id, prices)))
     return df.join(links)
 
 
@@ -49,6 +54,7 @@ def build_rankings(cfg, teams=None):
     df = df.sort_values("value", ascending=False).reset_index(drop=True)
     df.insert(0, "rank", df.index + 1)
     df["pg_rank"] = df.pg_value.rank(ascending=False).astype(int)
+    df["surplus"] = df.dollars - df.league_price
     return df
 
 
@@ -60,7 +66,7 @@ def main():
 
     df = build_rankings(cfg, teams)
     cols = (["rank", "pg_rank", "name", "team", "pos", "games", "mpg", *STATS, *schedule_columns(cfg),
-             "pg_value", "value", "dollars"] + ["z_" + c for c in cfg["weights"]] + ["player_id"])
+             "pg_value", "value", "dollars", "yahoo_cost", "league_price", "surplus"] + ["z_" + c for c in cfg["weights"]] + ["player_id"])
     df[cols].round(2).to_csv(OUT / "rankings.csv", index=False)
 
     pool_size = cfg["league"]["teams"] * cfg["league"]["roster_spots"]
@@ -71,7 +77,7 @@ def main():
         if len(missing):
             print(message)
             print(missing[["player_id", "name", "rank"]].to_string(index=False), "\n")
-    print(df[["rank", "pg_rank", "name", "team", "pos", "games", *weeks(cfg), "quality_games", "sched_score", "value", "dollars"]].head(30).round(2).to_string(index=False))
+    print(df[["rank", "pg_rank", "name", "team", "pos", "games", *weeks(cfg), "quality_games", "sched_score", "value", "dollars", "league_price", "surplus"]].head(30).round(2).to_string(index=False))
     print(f"\nWrote {len(df)} players to rankings.csv")
 
 
