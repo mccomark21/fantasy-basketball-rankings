@@ -4,11 +4,11 @@ valuation.py calculates the value of each player (z-scores, replacement level, g
 The playoff schedule does not change the value. The schedule columns are for information only.
 Output: rankings.csv
 """
-import numpy as np
 import pandas as pd
 
-from common import DATA, OUT, ROOT, load_config, q_cols, week_value, weeks
+from common import DATA, OUT, ROOT, load_config, weeks
 from identity import link_players
+from playoffs import join_teams, playoff_schedule, read_schedule, schedule_columns, schedule_grid
 from valuation import value_players
 
 # Category name in config.toml -> column calculated from the projections
@@ -35,65 +35,22 @@ def load_players(cfg):
     return df.join(links)
 
 
-def team_schedule(cfg):
-    """Games and quality games for each team. Also writes playoff_schedule.csv."""
-    sched = pd.read_csv(DATA / "schedule.csv", parse_dates=["date"])
-    day_games = sched.groupby("date").size() // 2
-    sched["quality"] = sched.date.map(day_games) <= cfg["quality_games"]["max_games_per_day"]
-
-    counts = {"q_season": sched.groupby("team").quality.sum()}
-    grid = {}
-    for week in cfg["playoffs"]["weeks"]:
-        name = week["name"]
-        in_week = sched[(sched.date >= pd.Timestamp(week["start"])) & (sched.date <= pd.Timestamp(week["end"]))]
-        counts[name] = in_week.groupby("team").size()
-        counts["q_" + name] = in_week.groupby("team").quality.sum()
-        for date, games in in_week.groupby("date"):
-            label = f"{name} {date:%a %m-%d} ({day_games[date]})"
-            grid[label] = pd.Series(np.where(games.quality, "Q", "x"), index=games.team)
-    teams = pd.DataFrame(counts).fillna(0).astype(int)
-
-    # Schedule score: average playoff week value, divided by the league average.
-    # 1.00 = an average playoff schedule. The score is for information only. It does not change the value.
-    week_names, bonus = weeks(cfg), cfg["quality_games"]["bonus"]
-    week_scores = [teams[w].map(lambda g: week_value(g, cfg)) + bonus * teams[q] for w, q in zip(week_names, q_cols(cfg))]
-    raw = sum(week_scores) / len(week_names)
-    teams["sched_score"] = raw / raw.mean()
-    teams["sched_rank"] = teams.sched_score.rank(ascending=False, method="min").astype(int)
-
-    # Grid: one row for each team, one column for each playoff day.
-    # Column name has the number of NBA games that day. Q = quality game, x = other game.
-    out = pd.DataFrame(grid).fillna("")
-    out["games"] = teams[week_names].sum(axis=1)
-    out["quality"] = teams[q_cols(cfg)].sum(axis=1)
-    out["sched_score"] = teams.sched_score.round(3)
-    out["sched_rank"] = teams.sched_rank
-    out.sort_values("sched_rank").to_csv(OUT / "playoff_schedule.csv", index_label="team")
-    return teams
-
-
 def main():
     cfg = load_config()
     OUT.mkdir(exist_ok=True)
     df = load_players(cfg)
 
-    teams = team_schedule(cfg)
-    df = df.join(teams, on="team")
-    week_cols, quality_cols = weeks(cfg), q_cols(cfg)
-    # A player with no team has no playoff games
-    count_cols = [*week_cols, *quality_cols, "q_season", "sched_rank"]
-    df[count_cols] = df[count_cols].fillna(0).astype(int)
-    df["sched_score"] = df.sched_score.fillna(0)
-    df["playoff_games"] = df[week_cols].sum(axis=1)
-    df["quality_games"] = df[quality_cols].sum(axis=1)
+    teams, days = playoff_schedule(read_schedule(), cfg)
+    schedule_grid(teams, days).to_csv(OUT / "playoff_schedule.csv", index_label="team")
+    df = join_teams(df, teams, cfg)
 
     df = value_players(df, cfg)
     pool_size = cfg["league"]["teams"] * cfg["league"]["roster_spots"]
     df = df.sort_values("value", ascending=False).reset_index(drop=True)
     df.insert(0, "rank", df.index + 1)
     df["pg_rank"] = df.pg_value.rank(ascending=False).astype(int)
-    cols = (["rank", "pg_rank", "name", "team", "pos", "games", "mpg", *STATS, *week_cols, "playoff_games",
-             *quality_cols, "quality_games", "q_season", "sched_score", "sched_rank", "pg_value", "value"] + ["z_" + c for c in cfg["weights"]] + ["player_id"])
+    cols = (["rank", "pg_rank", "name", "team", "pos", "games", "mpg", *STATS, *schedule_columns(cfg),
+             "pg_value", "value"] + ["z_" + c for c in cfg["weights"]] + ["player_id"])
     df[cols].round(2).to_csv(OUT / "rankings.csv", index=False)
 
     top = df[df["rank"] <= pool_size + 50]
@@ -103,7 +60,7 @@ def main():
         if len(missing):
             print(message)
             print(missing[["player_id", "name", "rank"]].to_string(index=False), "\n")
-    print(df[["rank", "pg_rank", "name", "team", "pos", "games", *week_cols, "quality_games", "sched_score", "value"]].head(30).round(2).to_string(index=False))
+    print(df[["rank", "pg_rank", "name", "team", "pos", "games", *weeks(cfg), "quality_games", "sched_score", "value"]].head(30).round(2).to_string(index=False))
     print(f"\nWrote {len(df)} players to rankings.csv")
 
 

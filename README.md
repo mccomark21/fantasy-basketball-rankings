@@ -52,7 +52,7 @@ Yahoo (fetch_yahoo.py) ┘                    output/playoff_schedule.csv       
 | 1 | `fetch_data.py` | Downloads NBA rosters and the schedule from ESPN. |
 | 2 | `fetch_yahoo.py` | Downloads Yahoo positions, auction prices and ADP. |
 | 3 | `rankings.py` | Gives each player a value from the projections and `config.toml`. Writes the rankings and the playoff schedule. |
-| 4 | `draft_board.py` | Turns the rankings into a sortable draft board for use during the draft. |
+| 4 | `draft_board.py` | Turns the rankings and the playoff schedule into a sortable draft board for use during the draft. |
 
 ## Getting started
 
@@ -115,13 +115,14 @@ scripts/
   rankings.py             Writes output/rankings.csv and output/playoff_schedule.csv
   valuation.py            Calculates the value of each player (used by rankings.py)
   identity.py             Links each player to an ESPN team and a Yahoo row (used by rankings.py)
+  playoffs.py             Playoff-week rules: games, quality games, schedule score, short weeks
   draft_board.py          Writes output/draft_board.html and output/draft_board.md
-  common.py               Shared helpers: paths, config, playoff weeks and names
+  common.py               Shared helpers: paths, config, playoff week names and names
 data/                     Inputs (not tracked by Git)
 output/                   Generated files (not tracked by Git)
 docs/
   category_weights.md     How the category weights were calculated
-tests/                    Tests for valuation.py, identity.py and draft_board.py
+tests/                    Tests for valuation.py, identity.py, playoffs.py and draft_board.py
 ```
 
 ### Data files
@@ -151,6 +152,7 @@ The scripts write these files. Do not edit them.
 | Change a category weight, the games-played penalty or the playoff weeks | [`config.toml`](config.toml) |
 | Change the limits for draft board flags | `[flags]` in [`config.toml`](config.toml) |
 | Change how player value is calculated | [`scripts/valuation.py`](scripts/valuation.py) |
+| Change a playoff-week rule (week value, quality days, schedule score, short weeks) | [`scripts/playoffs.py`](scripts/playoffs.py) |
 | Add a column to the rankings | [`scripts/rankings.py`](scripts/rankings.py) |
 | Change the layout or the columns of the draft board | [`scripts/draft_board.py`](scripts/draft_board.py) |
 | Fix a player with no team or no Yahoo data | `data/name_overrides.csv`. See [Players who do not match](#players-who-do-not-match). |
@@ -258,7 +260,7 @@ python -m pip install greenlet==3.1.1
 python -m pytest
 ```
 
-The tests are in `tests/`. They cover `valuation.py` and the filter bar of `draft_board.py`.
+The tests are in `tests/`. They cover `valuation.py`, `identity.py`, `playoffs.py` and the filter bar of `draft_board.py`.
 
 ## Roadmap
 
