@@ -41,6 +41,7 @@ def run_auction(pool, cfg, rng, keeper=None, playoffs=None):
 
     pool needs name, pos, dollars, league_price and yahoo_cost. A missing price is $0.
     keeper is the name of your keeper. He is the first row, and his price is league_price (rounded).
+    The players in [simulation] other_keepers go to the bot teams 1, 2, ... at league_price before the auction.
     playoffs is a team_score.Playoffs. With it, your bid uses the playoff fit, and pool also needs team and prod.
     rests_b2b is optional: with it, the fit counts the rest days of a player who rests on back-to-backs.
     """
@@ -56,15 +57,19 @@ def run_auction(pool, cfg, rng, keeper=None, playoffs=None):
     core = []  # your core players, as team_score players
     total = spots.sum()
     sales = []
-    if keeper is not None:
-        kept = next(pool[pool.name == keeper].itertuples())
+    others = cfg["simulation"].get("other_keepers", [])
+    for team, name in [(0, keeper), *enumerate(others, start=1)]:
+        if name is None:
+            continue
+        kept = next(pool[pool.name == name].itertuples())
         price = round(kept.league_price)
-        rosters[0].append(kept.positions)
-        core.append(_player(kept, playoffs))
-        money[0] -= price
-        spots[0] -= 1
-        sales.append((keeper, 0, price))
-        pool = pool[pool.name != keeper]
+        rosters[team].append(kept.positions)
+        if team == 0:
+            core.append(_player(kept, playoffs))
+        money[team] -= price
+        spots[team] -= 1
+        sales.append((name, team, price))
+        pool = pool[pool.name != name]
 
     order = pool.league_price.clip(lower=min_bid) * rng.lognormal(0, noise, len(pool))
     for p in pool.loc[order.sort_values(ascending=False, kind="stable").index].itertuples():
@@ -190,7 +195,7 @@ def main():
     players, playoffs = make_playoffs(rankings, playoff_schedule(read_schedule(), cfg)[1], cfg)
     pool = players[["name", "pos", "dollars", "league_price", "yahoo_cost", "team", "prod", "stats", "value",
                     "inj_risk", "rests_b2b"]]
-    missing = sorted(set(sim["keepers"]) - set(pool.name) - {NO_KEEPER})
+    missing = sorted((set(sim["keepers"]) | set(sim.get("other_keepers", []))) - set(pool.name) - {NO_KEEPER})
     if missing:
         raise SystemExit(f"The rankings do not have these keepers: {', '.join(missing)}. "
                          "Change keepers in [simulation] in config.toml.")

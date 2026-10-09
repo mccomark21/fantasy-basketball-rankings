@@ -173,3 +173,14 @@ def test_a_high_risk_core_misses_playoff_weeks_in_some_runs():
     scores = simulate(players, cfg, None, runs=200, rng=np.random.default_rng(0), playoffs=playoffs)[0]
     assert 0.3 < scores.title.mean() < 0.7
     assert sorted(scores.playoff.unique()) == pytest.approx([0.0, 10.0])  # 5 / (1 - 0.5) when he plays
+
+
+def test_other_teams_keepers_go_to_the_bots_before_the_auction():
+    # The bot (team 1) keeps K at his league price ($30) and has 1 spot and $70 left. You win A at the bot's $21.
+    cfg = config(spots=2)
+    cfg["simulation"]["other_keepers"] = ["K"]
+    players = pool(("K", ANY, 40, 30.4, 30), ("A", ANY, 30, 20, 20), ("B", ANY, 5, 18, 18), ("C", ANY, 1, 5, 5))
+    sales = run_auction(players, cfg, np.random.default_rng(0))
+    assert sold(sales, "K") == [1, 30]
+    assert sold(sales, "A") == [0, 21]
+    assert sales.groupby("team").size().to_dict() == {0: 2, 1: 2}
