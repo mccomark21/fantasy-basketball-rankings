@@ -52,6 +52,13 @@ def test_day_table_has_one_row_for_each_playoff_day(result):
     assert sorted(days.teams[0]) == ["A", "B", "C", "D"]
 
 
+def test_day_table_marks_the_second_night_of_a_back_to_back(result):
+    # A plays on Feb 28, Mar 1, 2 and 3: the second nights are Mar 1 (the day before is not a playoff day), 2 and 3.
+    # B plays Feb 28, Mar 1, 3 and 4. C plays Mar 1 and 2. D plays Mar 1, 4 and 5.
+    _, days = result
+    assert [sorted(b) for b in days.b2b] == [["A", "B"], ["A", "C"], ["A"], ["B"], ["D"]]
+
+
 def test_short_week_is_at_or_below_avoid_week_games(result):
     teams, _ = result
     assert teams.short_weeks.to_dict() == {"A": "", "B": "", "C": "2-game wk1", "D": ""}

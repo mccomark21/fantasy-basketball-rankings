@@ -130,6 +130,7 @@ All settings are in [`config.toml`](config.toml). To apply a change, run the scr
 | `[board]` | The low-games mark and the tiers in the Markdown board. |
 | `[flags]` | The limits that make a draft board flag green, gray, yellow or a red X. |
 | `[simulation]` | The auction simulator: the number of runs, the bid noise, the seed, your keeper candidates, your core size and the playoff fit. See [Auction simulator](#auction-simulator). |
+| `[risk]` | Injury risk and back-to-back rest in the simulator: the chance of a missed playoff week for each tier and the chance of a rest day. See [Injuries and rest days](#injuries-and-rest-days). |
 
 ## Project structure
 
@@ -165,6 +166,7 @@ tests/                    Tests for valuation.py, identity.py, playoffs.py, draf
 | `data/Projections.csv` | Season projections. Replace the file when projections change. | Yes |
 | `data/name_overrides.csv` | Name fixes for players who do not match: the ESPN name (`espn_name`), the Yahoo name (`yahoo_name`) or a fixed team (`team`). | Yes |
 | `data/rosters.csv`, `data/schedule.csv` | ESPN data from `fetch_data.py`. | No |
+| `data/projection_risk.csv` | Injury risk tier (`inj_risk`) and back-to-back rest (`rests_b2b`) for each player, from the projections page. | Yes |
 | `data/yahoo_players.csv` | Yahoo data from `fetch_yahoo.py`. | No |
 
 ### Output files
@@ -242,13 +244,21 @@ The simulator writes the `simulation_*.csv` files to `output/`. Run `draft_board
 3. Streamers fill empty starting slots on busy days. Your stream spots start each week empty, and each new streamer uses one of your 5 adds. A streamer comes from the team with the most games left in the week and stays until the end of the week. There are no adds on quality days.
 4. The playoff score is the total production of the starters and the streamers.
 
+### Injuries and rest days
+
+The simulator adds the risk that the value does not show. The settings are in `[risk]`.
+
+- Back-to-back rest: a player with `rests_b2b` sits on the second night of a back-to-back with the chance `rest_chance` (1.0). The playoff weeks have 19 of these nights, so he misses games that his team plays. The rest days lower his playoff fit, so your bot bids less for him.
+- Injuries: in each simulated auction, each player misses each playoff week with the chance of his `inj_risk` tier (`missed_week`). The projected games already hold the average cost of injuries, so the simulator raises his production on the days that he plays by 1 / (1 − chance). His expected production stays the same. The draw changes the spread only: a core of high-risk players loses a whole week more often, and the face-offs show it in the title percent.
+- The first tier chances come from the games in `data/Projections.csv`: the share of the season that each tier misses. A player who is not in `data/projection_risk.csv` gets `missing_tier` (med).
+
 ### Playoff face-offs
 
 `matchups.py` plays the playoff weeks for each simulated auction:
 
 1. Each team has a core of 7 players and streams the other spots, as you do. A bot's core is its best 7 players by production.
 2. The 8 teams with the highest season value of their core make the playoffs (`league.playoff_teams`).
-3. Each week, a team's total in each category is its expected total + random noise. The noise treats a total as a random count (variance = mean). Points get twice that variance.
+3. Each week, a team's total in each category is its expected total, with the injuries and the rest days of this run, + random noise. The noise treats a total as a random count (variance = mean). Points get twice that variance.
 4. A team wins a matchup if it wins more of the 6 categories.
 5. Round robin: each week, each pair of playoff teams plays. `rr_win_pct` is your win percent, and a tie counts as half a win.
 6. Bracket: 1 v 8, 4 v 5, 2 v 7 and 3 v 6 in week 19, then the semifinals and the final. A tie goes to the higher seed. `title_pct` is the percent of auctions that you win the final.

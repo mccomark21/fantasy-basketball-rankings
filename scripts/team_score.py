@@ -9,6 +9,10 @@
      the most games in the rest of the week, and he replaces a streamer who does not play that day.
      A streamer stays until the end of the week. There are no adds on a quality day, because few free
      agents play. A streamer gives the production of an average waiver player (the first 14 after the pool).
+  4. Absences (config.toml [risk]): a player with rests_b2b sits on the second night of a back-to-back with the
+     chance rest_chance. In one simulated run (draw()), a player also misses each playoff week with the chance of
+     his inj_risk tier. His production on the days that he plays goes up to keep his expected production the same,
+     because the projected games already hold the average cost of injuries. The draw changes the spread only.
 """
 import numpy as np
 import pandas as pd
@@ -33,14 +37,17 @@ def make_playoffs(rankings, days, cfg):
 class Playoffs:
     """The playoff days, with the rules to score a roster.
 
-    days: one row for each playoff day with week, quality and teams (playoffs.playoff_schedule()).
+    days: one row for each playoff day with week, quality, teams and b2b (playoffs.playoff_schedule()).
+          b2b is the list of teams on the second night of a back-to-back. Without the column, no team is.
     streamer: production of a free agent for one game.
     streamer_stats: the stats of a free agent for one game, for week_totals().
     """
 
     def __init__(self, days, streamer, cfg, streamer_stats=None):
-        self.days = [(d.week, d.quality, set(d.teams)) for d in days.itertuples()]
-        self.teams = sorted(set().union(*(teams for _, _, teams in self.days)))
+        b2b = days["b2b"] if "b2b" in days else [[]] * len(days)
+        self.days = [(d.week, d.quality, set(d.teams), set(rest)) for d, rest in zip(days.itertuples(), b2b)]
+        self.weeks = list(dict.fromkeys(week for week, *_ in self.days))
+        self.teams = sorted(set().union(*(teams for _, _, teams, _ in self.days)))
         self.streamer, self.streamer_stats = streamer, streamer_stats
         self.stream_spots = cfg["auction"]["spots"] - cfg["simulation"]["core"]
         self.cfg = cfg
@@ -48,7 +55,8 @@ class Playoffs:
     def score(self, roster):
         """Total production of the roster and the streamers in the playoffs.
 
-        roster is your core players: a list of dicts with team, prod and pos.
+        roster is your core players: a list of dicts with team, prod and pos. Optional: rests_b2b (1 if the player
+        rests on back-to-backs) and out (the set of days that he misses, from draw()).
         """
         return sum(sum(p["prod"] for p in lineup) + streams * self.streamer for _, lineup, streams in self._days(roster))
 
@@ -63,14 +71,37 @@ class Playoffs:
             totals[week] = totals.get(week, 0) + day
         return pd.DataFrame(totals, index=list(self.cfg["weights"])).T
 
+    def draw(self, roster, rng):
+        """The roster in one simulated run: each player gets out, the set of days that he misses.
+
+        He misses a whole playoff week with the chance of his inj_risk tier ([risk] missed_week). A player with
+        no tier gets [risk] missing_tier. With rests_b2b, he also sits on a second night with [risk] rest_chance.
+        His prod and stats go up by 1 / (1 - chance), so his expected production is the same as without the draw.
+        """
+        risk = self.cfg["risk"]
+        drawn = []
+        for p in roster:
+            tier = p.get("inj_risk")
+            chance = risk["missed_week"][tier if isinstance(tier, str) else risk["missing_tier"]]
+            weeks = {w for w in self.weeks if rng.random() < chance}
+            out = {i for i, (week, _, _, rest) in enumerate(self.days)
+                   if week in weeks or (self._rests(p, rest) and rng.random() < risk["rest_chance"])}
+            scale = 1 / (1 - chance)
+            player = {**p, "out": out, "prod": p["prod"] * scale}
+            if "stats" in p:
+                player["stats"] = [s * scale for s in p["stats"]]
+            drawn.append(player)
+        return drawn
+
     def _days(self, roster):
         """For each playoff day: (week, the players who start, the number of streamers who start)."""
         roster = [{**p, "pos": set(p["pos"].split("/"))} for p in roster]
         week, held, adds = None, [], 0
-        for i, (name, quality, teams) in enumerate(self.days):
+        for i, (name, quality, teams, rest) in enumerate(self.days):
             if name != week:
                 week, held, adds = name, [], self.cfg["league"]["adds"]
-            lineup = self._lineup([p for p in roster if p["team"] in teams])
+            playing = [p for p in roster if p["team"] in teams and i not in p.get("out", ())]
+            lineup = self._lineup([self._rested(p, rest) for p in playing])
             empty = len(self.cfg["league"]["slots"]) + 1 - len(lineup)  # + 1 for Util
 
             # Streamers: the ones that you hold play first. Then, on a busy day, each add fills one more slot.
@@ -88,21 +119,38 @@ class Playoffs:
     def fit(self, core, player):
         """What the player adds to your core, divided by what a player on an average schedule adds.
 
-        The other player has the same production and any position. His gain is the average for the schedules
-        of all teams. So a weak schedule or a crowded position gives a fit below 1, and a fit of 1 is average.
-        The value stays inside [simulation] fit_limits.
+        The other player has the same production and any position, and he does not rest on back-to-backs. His gain
+        is the average for the schedules of all teams. So a weak schedule, a crowded position or rest days give a
+        fit below 1, and a fit of 1 is average. The value stays inside [simulation] fit_limits.
         """
         base = self.score(core)
         gain = self.score(core + [player]) - base
-        anyone = {**player, "pos": "/".join(self.cfg["league"]["slots"])}
+        anyone = {**player, "pos": "/".join(self.cfg["league"]["slots"]), "rests_b2b": 0}
         average = np.mean([self.score(core + [{**anyone, "team": t}]) for t in self.teams]) - base
         low, high = self.cfg["simulation"]["fit_limits"]
         return min(high, max(low, gain / average)) if average > 0 else low
 
+    def _rests(self, p, rest):
+        """True if the player rests on back-to-backs and his team is on the second night (rest = those teams)."""
+        return bool(p.get("rests_b2b")) and p["team"] in rest
+
+    def _rested(self, p, rest):
+        """The player with the expected production for the day: x (1 - rest_chance) on a second night that he can rest.
+
+        A drawn player (one with out) is not scaled. His rest days are in out.
+        """
+        if "out" in p or not self._rests(p, rest):
+            return p
+        scale = 1 - self.cfg["risk"]["rest_chance"]
+        player = {**p, "prod": p["prod"] * scale}
+        if "stats" in p:
+            player["stats"] = [s * scale for s in p["stats"]]
+        return player
+
     def _games_left(self, i):
         """Games for each team from day i to the end of its week."""
         week, left = self.days[i][0], {}
-        for name, _, teams in self.days[i:]:
+        for name, _, teams, _ in self.days[i:]:
             if name != week:
                 break
             for t in teams:
