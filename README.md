@@ -225,7 +225,7 @@ The playoff schedule does not change the final value. The schedule columns and t
   - The fit compares what the player adds to your playoff score with what a player on an average playoff schedule adds. That other player has any position, so a crowded position lowers the fit. The fit goes from 0.5 to 1.5.
 - Rules: $200 budget, 10 spots, $1 minimum bid. A maximum bid leaves $1 for each other empty spot. A team bids only if it can still fill PG, SG, SF, PF and C.
 - Price: the winner pays the second-highest maximum bid + $1.
-- Your keeper costs his `league_price` and takes one spot. The simulation ignores the other teams' keepers.
+- Your keeper costs his `league_price` and takes one spot. The simulation ignores the other teams' keepers. The keeper option `"No keeper"` runs the auction with no keeper.
 
 After each auction, the top teams play the playoff weeks head to head. See [Playoff face-offs](#playoff-face-offs).
 

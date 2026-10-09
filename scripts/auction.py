@@ -33,6 +33,7 @@ from sim_results import group_table, player_table
 from team_score import make_playoffs, open_slots
 
 CHUNKS = 64  # parts of the auctions for the parallel run
+NO_KEEPER = "No keeper"  # a keeper option in config.toml: you keep no one and start the auction with all your spots
 
 
 def run_auction(pool, cfg, rng, keeper=None, playoffs=None):
@@ -189,7 +190,7 @@ def main():
     players, playoffs = make_playoffs(rankings, playoff_schedule(read_schedule(), cfg)[1], cfg)
     pool = players[["name", "pos", "dollars", "league_price", "yahoo_cost", "team", "prod", "stats", "value",
                     "inj_risk", "rests_b2b"]]
-    missing = sorted(set(sim["keepers"]) - set(pool.name))
+    missing = sorted(set(sim["keepers"]) - set(pool.name) - {NO_KEEPER})
     if missing:
         raise SystemExit(f"The rankings do not have these keepers: {', '.join(missing)}. "
                          "Change keepers in [simulation] in config.toml.")
@@ -203,13 +204,14 @@ def main():
     with ProcessPoolExecutor(os.cpu_count()) as executor:
         for keeper in sim["keepers"]:
             seeds = np.random.SeedSequence(sim["seed"]).spawn(CHUNKS)
-            results = list(executor.map(_auctions, repeat(pool), repeat(cfg), repeat(keeper), parts,
+            kept = None if keeper == NO_KEEPER else keeper
+            results = list(executor.map(_auctions, repeat(pool), repeat(cfg), repeat(kept), parts,
                                         [np.random.default_rng(seed) for seed in seeds], repeat(playoffs)))
             scores = pd.concat([r[0] for r in results], ignore_index=True)
             mine = pd.concat([r[1].assign(run=r[1].run + start) for r, start in zip(results, starts)])
             won = _wins(mine[mine.name != keeper], sim["runs"])
             all_runs.append(mine.join(scores, on="run").rename(columns={"name": "player"}).assign(keeper=keeper))
-            summary[keeper] = {"cost": round(pool.set_index("name").league_price[keeper]),
+            summary[keeper] = {"cost": 0 if kept is None else round(pool.set_index("name").league_price[keeper]),
                                "title_pct": 100 * scores.title.mean(),
                                "playoffs_pct": 100 * scores.made_playoffs.mean(),
                                "rr_win_pct": scores.rr_win_pct.mean(),
