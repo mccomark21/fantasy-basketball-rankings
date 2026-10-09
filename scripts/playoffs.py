@@ -57,10 +57,13 @@ def playoff_schedule(sched, cfg):
     - week_score: average week value with no quality bonus
     - sched_score (1.00 = league average) and sched_rank
     - short_weeks: for example "2-game wk20", or "" if the team has no short week
-    days: one row for each playoff day. date, week, nba_games, quality (a low-volume day) and teams (a list).
+    days: one row for each playoff day. date, week, nba_games, quality (a low-volume day), teams (a list) and
+          b2b (the teams on the second night of a back-to-back, a list).
     """
     day_games = sched.groupby("date").size() // 2
-    sched = sched.assign(quality=sched.date.map(day_games) <= cfg["quality_games"]["max_games_per_day"])
+    sched = sched.sort_values(["team", "date"])
+    sched = sched.assign(quality=sched.date.map(day_games) <= cfg["quality_games"]["max_games_per_day"],
+                         b2b=sched.groupby("team").date.diff().eq(pd.Timedelta(days=1)))
 
     counts, days = {"q_season": sched.groupby("team").quality.sum()}, []
     for week, q_name in zip(cfg["playoffs"]["weeks"], _q_cols(cfg)):
@@ -69,7 +72,8 @@ def playoff_schedule(sched, cfg):
         counts[name] = in_week.groupby("team").size()
         counts[q_name] = in_week.groupby("team").quality.sum()
         days += [{"date": date, "week": name, "nba_games": day_games[date], "quality": games.quality.iloc[0],
-                  "teams": games.team.tolist()} for date, games in in_week.groupby("date")]
+                  "teams": games.team.tolist(), "b2b": games.team[games.b2b].tolist()}
+                  for date, games in in_week.groupby("date")]
     teams = _summarize(pd.DataFrame(counts).fillna(0).astype(int), cfg)
 
     # Schedule score: average playoff week value with the quality bonus, divided by the league average.

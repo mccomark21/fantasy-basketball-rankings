@@ -112,7 +112,7 @@ HTML = """<title>Which Keeper Wins Titles?</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;800&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: a scoreboard strip for the 3 keepers, then one keeper's detail (groups beside players), then the method notes. */
+/* Layout: a scoreboard strip for the keepers, then one keeper's detail (groups beside players), then the method notes. */
 :root {
   --bg: #f3f5f7; --panel: #ffffff; --ink: #14202b; --muted: #5b6b78; --line: #d8dee4;
   --accent: #1d5fd1; --accent-soft: #dce7fb; --good: #15803d; --bad: #c2410c;
@@ -250,6 +250,7 @@ td.num { font-family: var(--data); }
       <li>Each auction has 14 teams with $200 and 10 spots. 13 bots bid near this league's past prices, and the prices move toward the Yahoo averages as rosters fill. Your keeper costs his league price.</li>
       <li>Your bot buys 7 core players and pays $1 for 3 stream spots. It bids your dollar value, scaled up with the money that the stream spots save, and adjusted for playoff fit (schedule and positions in weeks 19–21).</li>
       <li>Each team starts its best legal lineup each playoff day and streams free agents into empty slots on busy days, with 5 adds a week. The 8 teams with the best season value make the playoffs.</li>
+      <li>In each auction, every player misses each playoff week with the chance of his injury tier (low 5%, medium 12%, high 19%, extreme 27%). His production on the days that he plays goes up to keep his expected production the same, so the risk changes the spread only. A player who rests on back-to-backs sits on the second night.</li>
       <li>Each playoff week gets random category totals (PTS, REB, AST, 3PM, STL, BLK). The playoff teams play a round robin each week and the real bracket: quarterfinals in week 19, semifinals in week 20 and the final in week 21.</li>
       <li>The bots do not plan for the playoffs, so the title percents are higher than in a real league. Compare the keepers with them. Do not read them as a forecast.</li>
       <li>Groups and lift show what goes with titles. They do not prove cause: a cheap player also leaves money for the rest of the core. A group seen in few auctions has a wide range.</li>
@@ -261,14 +262,19 @@ td.num { font-family: var(--data); }
 const DATA = __DATA__;
 const fmt = (v, d = 0) => v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const NO_KEEPER = "No keeper";
 const last = n => n.split(" ").slice(-1)[0];
+const tabLabel = k => k === NO_KEEPER ? k : `Keep ${last(k)}`;
+const withKeeper = k => k === NO_KEEPER ? "with no keeper" : `with ${esc(k)}`;
 const keepers = DATA.summary.map(s => s.keeper);
 const best = DATA.summary.reduce((a, b) => (b.title_pct > a.title_pct ? b : a));
 const second = DATA.summary.filter(s => s !== best).reduce((a, b) => (b.title_pct > a.title_pct ? b : a));
 
 document.getElementById("lede").innerHTML =
-  `Keep <strong>${esc(best.keeper)}</strong>. Your team wins the title in ${fmt(best.title_pct)}% of simulated auctions with him, ` +
-  `against ${fmt(second.title_pct)}% with ${esc(second.keeper)}. He costs $${fmt(best.cost)}, so more of your $200 goes to the auction.`;
+  (best.keeper === NO_KEEPER ? `Keep <strong>no one</strong>. Your team wins the title in ${fmt(best.title_pct)}% of simulated auctions with no keeper, `
+    : `Keep <strong>${esc(best.keeper)}</strong>. Your team wins the title in ${fmt(best.title_pct)}% of simulated auctions with him, `) +
+  `against ${fmt(second.title_pct)}% ${withKeeper(second.keeper)}.` +
+  (best.keeper === NO_KEEPER ? "" : ` He costs $${fmt(best.cost)}, so more of your $200 goes to the auction.`);
 document.getElementById("meta").textContent =
   `${DATA.runs.toLocaleString()} simulated auctions for each keeper. 14 teams, $200 auction, H2H categories (PTS, REB, AST, 3PM, STL, BLK), playoffs in weeks 19–21.`;
 
@@ -288,7 +294,7 @@ document.getElementById("board").innerHTML = DATA.summary.map(s => `
 
 const tabs = document.getElementById("tabs");
 tabs.innerHTML = keepers.map((k, i) =>
-  `<button type="button" role="tab" id="tab-${i}" aria-selected="${k === best.keeper}" data-k="${esc(k)}">Keep ${esc(last(k))}</button>`).join("");
+  `<button type="button" role="tab" id="tab-${i}" aria-selected="${k === best.keeper}" data-k="${esc(k)}">${esc(tabLabel(k))}</button>`).join("");
 
 const COLS = [
   ["player", "Player", "l"], ["pos", "Pos", "l"], ["team", "Team", "l"], ["core_pct", "In core", ""],

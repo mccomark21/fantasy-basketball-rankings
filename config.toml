@@ -27,14 +27,31 @@ runs = 2000                # auctions for each keeper (about 5 minutes on 16 CPU
 noise = 0.20               # spread of the random noise on each bot bid and on the nomination order (lognormal sigma)
 seed = 1                   # the same seed gives the same results
 # Your keeper candidates. The simulator runs each one as your keeper and compares the results.
-# Keeper cost = league_price. Other teams' keepers are not in the simulation.
-keepers = ["Matas Buzelis", "Cooper Flagg", "Tyrese Maxey"]
+# Keeper cost = league_price. "No keeper" = keep no one.
+keepers = ["No keeper", "Matas Buzelis", "Cooper Flagg", "Tyrese Maxey", "Darius Garland", "Scottie Barnes", "Paolo Banchero"]
+# Players that other teams keep. Each goes to a bot team at league_price and takes one of its spots.
+other_keepers = ["Domantas Sabonis"]  # Sabonis: shadymcgrady (Mike)
 # Your strategy: buy core players, then pay min_bid for each other spot and use those spots for streamers.
 core = 7
 # Your bid for a core player = dollars x (1 - playoff_weight + playoff_weight x fit). fit = what the player
 # adds to your playoff score / what a player with an average playoff schedule adds. See scripts/team_score.py.
 playoff_weight = 1.0
 fit_limits = [0.5, 1.5]    # the lowest and the highest fit
+
+# Injury risk and back-to-back rest in the auction simulator. The data is data/projection_risk.csv.
+[risk]
+file = "data/projection_risk.csv"
+# Chance that a player misses a whole playoff week, for each inj_risk tier. The projected games already hold
+# the average cost of injuries, so the simulator raises his production on the days that he plays to keep his
+# expected production the same. The chance changes the spread only: a high-risk core can lose a whole week.
+# First values: the share of the season that each tier misses in data/Projections.csv (1 - mean games / 82):
+# low 78 games, med 72, high 67, extreme 60. There is no better source yet.
+missed_week = { low = 0.05, med = 0.12, high = 0.19, extreme = 0.27 }
+missing_tier = "med"       # tier for a player who is not in the file (med is the most common tier)
+# Chance that a player with rests_b2b sits on the second night of a back-to-back. The page says "some or all",
+# so start at 1.0. The simulator does not raise his production for these days: the rest days are a small part
+# of the projected games, and a rest on a known date is the risk that this setting shows.
+rest_chance = 1.0
 
 # Weight for each category z-score. See docs/category_weights.md.
 # Punted categories (FG%, FT%, TO) are not in this list.

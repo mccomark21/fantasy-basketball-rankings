@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 from auction import run_auction, simulate  # noqa: E402
@@ -15,7 +16,8 @@ def config(teams=2, spots=5, budget=100, noise=0.0, slots=(), core=None):
     """core = spots by default: your bot has no stream spots."""
     return {"league": {"teams": teams, "slots": list(slots), "adds": 0},
             "auction": {"budget": budget, "min_bid": 1, "spots": spots},
-            "simulation": {"noise": noise, "core": core or spots, "playoff_weight": 1.0, "fit_limits": [0.5, 1.5]}}
+            "simulation": {"noise": noise, "core": core or spots, "playoff_weight": 1.0, "fit_limits": [0.5, 1.5]},
+            "risk": {"missed_week": {"med": 0.0, "high": 0.5}, "missing_tier": "med", "rest_chance": 1.0}}
 
 
 def pool(*players):
@@ -159,3 +161,26 @@ def test_simulate_plays_the_playoff_face_offs():
     scores = simulate(players, cfg, None, runs=4, rng=np.random.default_rng(0), playoffs=playoffs)[0]
     assert scores[["made_playoffs", "rr_win_pct", "title"]].to_dict("list") == {
         "made_playoffs": [True] * 4, "rr_win_pct": [100.0] * 4, "title": [True] * 4}
+
+
+def test_a_high_risk_core_misses_playoff_weeks_in_some_runs():
+    # You win A (high risk). He misses the week in about half of the runs. The bot's B (no tier) never misses.
+    days = pd.DataFrame({"week": "wk1", "quality": False, "teams": [["BOS"]]})
+    cfg = with_face_offs(config(spots=1))
+    players = pool(("A", ANY, 30, 20, 20), ("B", ANY, 5, 18, 18)).assign(
+        team="BOS", prod=[5.0, 5.0], stats=[[100.0, 100.0], [100.0, 100.0]], value=[10.0, 1.0], inj_risk=["high", None])
+    playoffs = Playoffs(days, 0.0, cfg, [0.0, 0.0])
+    scores = simulate(players, cfg, None, runs=200, rng=np.random.default_rng(0), playoffs=playoffs)[0]
+    assert 0.3 < scores.title.mean() < 0.7
+    assert sorted(scores.playoff.unique()) == pytest.approx([0.0, 10.0])  # 5 / (1 - 0.5) when he plays
+
+
+def test_other_teams_keepers_go_to_the_bots_before_the_auction():
+    # The bot (team 1) keeps K at his league price ($30) and has 1 spot and $70 left. You win A at the bot's $21.
+    cfg = config(spots=2)
+    cfg["simulation"]["other_keepers"] = ["K"]
+    players = pool(("K", ANY, 40, 30.4, 30), ("A", ANY, 30, 20, 20), ("B", ANY, 5, 18, 18), ("C", ANY, 1, 5, 5))
+    sales = run_auction(players, cfg, np.random.default_rng(0))
+    assert sold(sales, "K") == [1, 30]
+    assert sold(sales, "A") == [0, 21]
+    assert sales.groupby("team").size().to_dict() == {0: 2, 1: 2}

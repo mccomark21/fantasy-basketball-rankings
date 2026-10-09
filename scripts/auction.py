@@ -13,7 +13,8 @@ One auction:
   6. The highest maximum bid wins. The winner pays the second-highest maximum bid + $1,
      but not more than his own maximum bid. Ties go to a random team.
 Team score: the playoff score of your core and your streamers (team_score.py), and the sum of your dollars.
-Then the top teams play the playoff weeks head to head (matchups.py).
+In each run, each player misses playoff weeks with the chance of his injury tier and rests on back-to-backs
+(team_score.Playoffs.draw). Then the top teams play the playoff weeks head to head (matchups.py).
 Output: for each keeper in config.toml [simulation], your title percent, your playoff results and the players that
 you win most. The auctions run in parallel, one process for each CPU core.
 """
@@ -32,6 +33,7 @@ from sim_results import group_table, player_table
 from team_score import make_playoffs, open_slots
 
 CHUNKS = 64  # parts of the auctions for the parallel run
+NO_KEEPER = "No keeper"  # a keeper option in config.toml: you keep no one and start the auction with all your spots
 
 
 def run_auction(pool, cfg, rng, keeper=None, playoffs=None):
@@ -39,7 +41,9 @@ def run_auction(pool, cfg, rng, keeper=None, playoffs=None):
 
     pool needs name, pos, dollars, league_price and yahoo_cost. A missing price is $0.
     keeper is the name of your keeper. He is the first row, and his price is league_price (rounded).
+    The players in [simulation] other_keepers go to the bot teams 1, 2, ... at league_price before the auction.
     playoffs is a team_score.Playoffs. With it, your bid uses the playoff fit, and pool also needs team and prod.
+    rests_b2b is optional: with it, the fit counts the rest days of a player who rests on back-to-backs.
     """
     teams, a = cfg["league"]["teams"], cfg["auction"]
     noise = cfg["simulation"]["noise"]
@@ -53,15 +57,19 @@ def run_auction(pool, cfg, rng, keeper=None, playoffs=None):
     core = []  # your core players, as team_score players
     total = spots.sum()
     sales = []
-    if keeper is not None:
-        kept = next(pool[pool.name == keeper].itertuples())
+    others = cfg["simulation"].get("other_keepers", [])
+    for team, name in [(0, keeper), *enumerate(others, start=1)]:
+        if name is None:
+            continue
+        kept = next(pool[pool.name == name].itertuples())
         price = round(kept.league_price)
-        rosters[0].append(kept.positions)
-        core.append(_player(kept, playoffs))
-        money[0] -= price
-        spots[0] -= 1
-        sales.append((keeper, 0, price))
-        pool = pool[pool.name != keeper]
+        rosters[team].append(kept.positions)
+        if team == 0:
+            core.append(_player(kept, playoffs))
+        money[team] -= price
+        spots[team] -= 1
+        sales.append((name, team, price))
+        pool = pool[pool.name != name]
 
     order = pool.league_price.clip(lower=min_bid) * rng.lognormal(0, noise, len(pool))
     for p in pool.loc[order.sort_values(ascending=False, kind="stable").index].itertuples():
@@ -117,7 +125,9 @@ def _your_bid(p, core, scale, playoffs, cfg):
 
 def _player(row, playoffs):
     """A pool row as a team_score player. None if playoffs is None."""
-    return {"team": row.team, "prod": row.prod, "pos": row.pos} if playoffs is not None else None
+    if playoffs is None:
+        return None
+    return {"team": row.team, "prod": row.prod, "pos": row.pos, "rests_b2b": getattr(row, "rests_b2b", 0)}
 
 
 def _fits(roster, spots, pos, slots):
@@ -129,9 +139,10 @@ def simulate(pool, cfg, keeper, runs, rng, playoffs=None):
     """Run the auction runs times. Returns (scores, won).
 
     scores: one row for each run. dollars is the sum of dollars of your players. With playoffs:
-            - playoff: the playoff score of your core (the keeper and the first players that you win).
-            - made_playoffs, rr_win_pct and title: your results in the face-offs (matchups.py).
-              Each bot streams like you: its core is its best players by prod. pool also needs stats and value.
+            - playoff: the playoff score of your core (the keeper and the first players that you win), with the
+              injuries and the rest days of this run (team_score.Playoffs.draw). pool can have inj_risk and rests_b2b.
+            - made_playoffs, rr_win_pct and title: your results in the face-offs (matchups.py), with the same
+              injuries. Each bot streams like you: its core is its best players by prod. pool also needs stats and value.
     won: one row for each player that you win (not the keeper), most often first.
          win_pct is the percent of runs that you win him. price is the median price that you pay.
     """
@@ -153,8 +164,9 @@ def _auctions(pool, cfg, keeper, runs, rng, playoffs):
         score = {"dollars": players.dollars[mine.name].sum()}
         if playoffs is not None:
             cores = [_core(players, sold.name[sold.team == t], t, cfg) for t in range(cfg["league"]["teams"])]
-            score["playoff"] = playoffs.score(cores[0].to_dict("records"))
-            totals = [playoffs.week_totals(core.to_dict("records")) for core in cores]
+            drawn = [playoffs.draw(core.to_dict("records"), rng) for core in cores]
+            score["playoff"] = playoffs.score(drawn[0])
+            totals = [playoffs.week_totals(core) for core in drawn]
             # Each team plays its core and streams its other spots, so the season value of its core gives the seeds
             score.update(face_offs(totals, np.array([core.value.sum() for core in cores]), rng, cfg))
         scores.append(score)
@@ -181,8 +193,9 @@ def main():
     sim = cfg["simulation"]
     rankings = build_rankings(cfg)
     players, playoffs = make_playoffs(rankings, playoff_schedule(read_schedule(), cfg)[1], cfg)
-    pool = players[["name", "pos", "dollars", "league_price", "yahoo_cost", "team", "prod", "stats", "value"]]
-    missing = sorted(set(sim["keepers"]) - set(pool.name))
+    pool = players[["name", "pos", "dollars", "league_price", "yahoo_cost", "team", "prod", "stats", "value",
+                    "inj_risk", "rests_b2b"]]
+    missing = sorted((set(sim["keepers"]) | set(sim.get("other_keepers", []))) - set(pool.name) - {NO_KEEPER})
     if missing:
         raise SystemExit(f"The rankings do not have these keepers: {', '.join(missing)}. "
                          "Change keepers in [simulation] in config.toml.")
@@ -196,13 +209,14 @@ def main():
     with ProcessPoolExecutor(os.cpu_count()) as executor:
         for keeper in sim["keepers"]:
             seeds = np.random.SeedSequence(sim["seed"]).spawn(CHUNKS)
-            results = list(executor.map(_auctions, repeat(pool), repeat(cfg), repeat(keeper), parts,
+            kept = None if keeper == NO_KEEPER else keeper
+            results = list(executor.map(_auctions, repeat(pool), repeat(cfg), repeat(kept), parts,
                                         [np.random.default_rng(seed) for seed in seeds], repeat(playoffs)))
             scores = pd.concat([r[0] for r in results], ignore_index=True)
             mine = pd.concat([r[1].assign(run=r[1].run + start) for r, start in zip(results, starts)])
             won = _wins(mine[mine.name != keeper], sim["runs"])
             all_runs.append(mine.join(scores, on="run").rename(columns={"name": "player"}).assign(keeper=keeper))
-            summary[keeper] = {"cost": round(pool.set_index("name").league_price[keeper]),
+            summary[keeper] = {"cost": 0 if kept is None else round(pool.set_index("name").league_price[keeper]),
                                "title_pct": 100 * scores.title.mean(),
                                "playoffs_pct": 100 * scores.made_playoffs.mean(),
                                "rr_win_pct": scores.rr_win_pct.mean(),
@@ -215,7 +229,8 @@ def main():
     print("  title_pct: you win the title. playoffs_pct: you are in the top "
           f"{cfg['league']['playoff_teams']} by season value.")
     print("  rr_win_pct: your win percent against the other playoff teams in each playoff week (when you are in).")
-    print(f"  playoff_score: the median playoff score of your core ({sim['core']} players) and your streamers.")
+    print(f"  playoff_score: the median playoff score of your core ({sim['core']} players) and your streamers, "
+          "with injuries and rest days.")
     print("  dollars: the median sum of your dollars.")
     summary = pd.DataFrame(summary).T.rename_axis("keeper")
     print(summary.round(1).to_string())

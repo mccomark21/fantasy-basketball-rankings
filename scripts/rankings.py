@@ -7,7 +7,7 @@ Output: rankings.csv. draft_board.py calls build_rankings() to get all the colum
 """
 import pandas as pd
 
-from common import DATA, OUT, ROOT, load_config, weeks
+from common import DATA, OUT, ROOT, load_config, name_key, weeks
 from identity import link_players
 from market import league_prices
 from playoffs import join_teams, playoff_schedule, read_schedule, schedule_columns, schedule_grid
@@ -37,7 +37,19 @@ def load_players(cfg):
                          pd.read_csv(DATA / "name_overrides.csv", dtype=str).fillna(""))
     prices = league_prices(yahoo, pd.read_csv(ROOT / cfg["market"]["drafts"]), cfg)
     links["league_price"] = links.yahoo_id.map(dict(zip(yahoo.yahoo_id, prices)))
-    return df.join(links)
+    return df.join(links).join(load_risk(df.name, cfg))
+
+
+def load_risk(names, cfg):
+    """inj_risk (low, med, high, extreme or NaN) and rests_b2b (0 or 1) for each name, from [risk] file.
+
+    The names match after name_key(). A player who is not in the file gets inj_risk NaN and rests_b2b 0.
+    """
+    risk = pd.read_csv(ROOT / cfg["risk"]["file"])
+    risk = risk.assign(key=risk.name.map(name_key)).drop_duplicates("key", keep="last").set_index("key")
+    out = risk[["inj_risk", "rests_b2b"]].reindex(names.map(name_key))
+    out.index = names.index
+    return out.assign(rests_b2b=out.rests_b2b.fillna(0).astype(int))
 
 
 def build_rankings(cfg, teams=None):

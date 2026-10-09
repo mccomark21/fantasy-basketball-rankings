@@ -8,17 +8,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 from team_score import Playoffs  # noqa: E402
 
 CFG = {"league": {"slots": ["PG", "SG", "SF", "PF", "C"]}, "auction": {"spots": 10}, "weights": {"pts": 1, "reb": 1},
-       "simulation": {"fit_limits": [0.5, 1.5]}}
+       "simulation": {"fit_limits": [0.5, 1.5]},
+       "risk": {"missed_week": {"low": 0.0, "med": 0.2, "high": 1.0}, "missing_tier": "low", "rest_chance": 1.0}}
 
 
-def days(*teams_by_day, week="wk1", quality=False):
-    """One row for each day. Each argument is the list of NBA teams that play that day."""
-    return pd.DataFrame({"week": week, "quality": quality, "teams": list(teams_by_day)})
+def days(*teams_by_day, week="wk1", quality=False, b2b=None):
+    """One row for each day. Each argument is the list of NBA teams that play that day.
+
+    b2b: for each day, the teams on the second night of a back-to-back. None = no column.
+    """
+    out = pd.DataFrame({"week": week, "quality": quality, "teams": list(teams_by_day)})
+    return out if b2b is None else out.assign(b2b=list(b2b))
 
 
-def player(team, prod, pos="PG", stats=(0, 0)):
-    """stats: per-game pts and reb."""
-    return {"team": team, "prod": prod, "pos": pos, "stats": list(stats)}
+def player(team, prod, pos="PG", stats=(0, 0), **more):
+    """stats: per-game pts and reb. more: inj_risk, rests_b2b."""
+    return {"team": team, "prod": prod, "pos": pos, "stats": list(stats), **more}
 
 
 def playoffs(schedule, streamer=0.0, adds=0, streams=0, streamer_stats=(0, 0)):
@@ -112,3 +117,67 @@ def test_week_totals_add_the_stats_of_each_start_and_each_streamer():
     assert totals.loc["wk1"].tolist() == pytest.approx([2 * 10 + 2 * 4, 2 * 5 + 2 * 2])
     assert totals.loc["wk2"].tolist() == pytest.approx([10 + 4, 5 + 2])
     assert totals.columns.tolist() == ["pts", "reb"]
+
+
+class Fixed:
+    """A random source that gives the same number each time."""
+
+    def __init__(self, value):
+        self.value = value
+
+    def random(self):
+        return self.value
+
+
+def test_a_player_who_rests_on_back_to_backs_gives_less_on_a_second_night():
+    # BOS plays 3 days. Day 2 is the second night of a back-to-back. With rest_chance 1.0, the rester sits.
+    schedule = days(["BOS"], ["BOS"], ["BOS"], b2b=[[], ["BOS"], []])
+    p = playoffs(schedule)
+    assert p.score([player("BOS", 10, rests_b2b=1)]) == pytest.approx(20)
+    assert p.score([player("BOS", 10, rests_b2b=0)]) == pytest.approx(30)
+    # With rest_chance 0.5, the second night gives half of his production.
+    p.cfg = {**p.cfg, "risk": {**p.cfg["risk"], "rest_chance": 0.5}}
+    assert p.score([player("BOS", 10, rests_b2b=1)]) == pytest.approx(25)
+
+
+def test_the_rest_days_lower_the_fit():
+    # A rester on a 2-game schedule with a back-to-back gets 1 game. The average schedule gives 2.
+    schedule = days(["BOS", "NY"], ["BOS", "NY"], b2b=[[], ["BOS"]])
+    p = playoffs(schedule)
+    assert p.fit([], player("BOS", 4, rests_b2b=1)) == pytest.approx(0.5)
+    assert p.fit([], player("BOS", 4)) == pytest.approx(1.0)
+
+
+def test_draw_takes_a_player_out_for_a_whole_week():
+    # med: chance 0.2. The random number 0.1 is below it, so he misses every week. 0.5 is above: he plays.
+    schedule = pd.concat([days(["BOS"], ["BOS"], week="wk1"), days(["BOS"], week="wk2")])
+    p = playoffs(schedule)
+    out = p.draw([player("BOS", 8, stats=(4, 2), inj_risk="med")], Fixed(0.1))[0]
+    assert out["out"] == {0, 1, 2}
+    assert p.score([out]) == 0
+    kept = p.draw([player("BOS", 8, stats=(4, 2), inj_risk="med")], Fixed(0.5))[0]
+    assert kept["out"] == set()
+    # His production goes up by 1 / (1 - 0.2), so the expected production is the same as without the draw.
+    assert p.score([kept]) == pytest.approx(3 * 8 / 0.8)
+    assert kept["stats"] == pytest.approx([4 / 0.8, 2 / 0.8])
+
+
+def test_draw_uses_the_missing_tier_for_a_player_with_no_tier():
+    # missing_tier is low, with chance 0. The player is never out, and his production does not change.
+    p = playoffs(days(["BOS"]))
+    for tier in [None, float("nan")]:
+        out = p.draw([player("BOS", 8, inj_risk=tier)], Fixed(0.0))[0]
+        assert out["out"] == set() and out["prod"] == 8
+    out = p.draw([player("BOS", 8)], Fixed(0.0))[0]
+    assert out["out"] == set()
+
+
+def test_draw_gives_the_rest_days_of_a_rester():
+    # No injury (random 0.5 is above every chance but high). Day 2 is a second night: the rester sits.
+    schedule = days(["BOS"], ["BOS"], ["BOS"], b2b=[[], ["BOS"], []])
+    p = playoffs(schedule)
+    out = p.draw([player("BOS", 10, rests_b2b=1, inj_risk="low")], Fixed(0.5))[0]
+    assert out["out"] == {1}
+    assert p.score([out]) == pytest.approx(20)
+    # week_totals also skips the rest day
+    assert p.week_totals([{**out, "stats": [1.0, 1.0]}]).loc["wk1"].tolist() == pytest.approx([2, 2])
