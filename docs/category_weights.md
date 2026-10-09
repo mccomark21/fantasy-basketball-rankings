@@ -45,6 +45,18 @@ Multiply the per-game z-score of each category by its weight. Then add the resul
 - **3PM:** the weight changes with IL use because the waiver-tier sample is small. If teams use all 3 IL spots, use about 0.80.
 - **3PM, STL and BLK** have almost no correlation with PTS + REB + AST (r ≤ 0.10). A lower weight on these categories does not decrease the value of core stats.
 
+## How to read these tables
+
+- **Weights table:** the final weight for each category. It is the number to multiply by the z-score.
+- **Baseline:** PTS, REB and AST are 1.00 by definition. The other categories are compared to their average.
+- **Punted categories:** FG%, FT% and TO have no row because they get no weight.
+- **Waiver tier, % of pool average:** a high number means the waiver wire has good players in this category. A high number gives a lower weight. **(no IL)** means the calculation assumes no player is on IL.
+- **Signal-to-noise:** the spread between teams divided by the random weekly noise. A low number means luck decides the week. A low number gives a lower weight.
+- **Weight, IL 14–42:** the range of weights when 14 to 42 players are on IL league-wide (1 to 3 per team). The number in parentheses is the average.
+- **How the two values combine:** the weight is the geometric mean of the waiver ratio and the signal-to-noise ratio (Method, step 4).
+- **Rounding:** the Weights table uses the Results averages, rounded to 0.05. STL is the exception. Its average is 0.44, and it is raised to 0.50 on purpose to keep tiebreaker value.
+- A lower weight means the category counts for less. It does not mean the category does not count.
+
 ## Draft notes
 
 - Assists are the scarcest category. Draft them early.
