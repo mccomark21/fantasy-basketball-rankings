@@ -579,8 +579,12 @@ table.combo-table tr:last-child td { border-bottom: 0; }
 .team { margin: 12px 0 0; }
 .team-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-bottom: 6px; }
 .team-head h2 { font-size: 16px; margin: 0; }
-.team-head .warning, .team-weeks .warning { color: var(--bad); font-weight: 600; }
-.team-weeks { margin: 6px 0 0; color: var(--fg); }
+.team-head .warning { color: var(--bad); font-weight: 600; }
+table.team-weeks { margin-top: 8px; }
+table.team-weeks th, table.team-weeks td { padding: 3px 10px; }
+table.team-weeks tbody th { text-align: left; font-weight: 600; }
+table.team-weeks td.pct { font-weight: 700; }
+table.team-weeks td.weak, table.team-weeks td.hole { background: color-mix(in srgb, var(--bad) 35%, transparent); }
 .team-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 20px; }
 .team-main { min-width: 0; max-width: 100%; }
 .team-legend { flex: 0 0 auto; width: 220px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px;
@@ -646,6 +650,9 @@ players. The keeper stays. Slot: your players fill PG, SG, SF, PF, C and Util in
 A player with no open slot goes to the bench. An empty slot shows a position that you still need. The day columns show your core in the best lineup on each day: green = starts, purple = starts
 on a quality day, red ✕ = sits in a logjam, r = rests on a back-to-back, ○ = a stream player who plays. The last row shows
 the starters on each day, red for a hole (an empty slot on a quality day).</p>
+<p>Week table: Games = the playoff games of your core. Started = the games in the best lineup of each day.
+Used = started / games: 100% means that no game sits in a logjam. vs ideal = started / the games of a core of the same
+size in which each player has the most games of the week (at most 6 starters a day). Green = 90% or more.</p>
 <p>Fit: the games that the player adds to your started games / his playoff games, then the same for quality games.
 Green = 90% or more, yellow = 70% to 89%, red = less than 70%. A low share means a logjam: he sits, or he pushes out
 one of your players. ⚑ = he fills at least one hole. The page keeps your team in this browser.</p>
@@ -660,7 +667,7 @@ __TABS__
 <button type="button" data-act="reset" title="Clear your team and the taken players. The keeper stays.">Reset</button></div>
 <div class="team-body"><div class="team-main">
 <div class="scroll"><table id="roster" class="plain team-table"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
-<p class="team-weeks" id="team-weeks"></p>
+<div class="scroll"><table id="team-weeks" class="plain team-weeks"><thead></thead><tbody></tbody></table></div>
 </div>
 <aside class="team-legend" aria-labelledby="legend-title">
 <h2 id="legend-title">Legend</h2>
@@ -900,7 +907,7 @@ function render() {
 // The legend is no taller than the team table. If one column is taller, the legend uses two columns.
 const legendBox = document.querySelector(".team-legend");
 function fitLegend() {
-  const table = document.querySelector(".team-main .scroll");
+  const table = document.querySelector(".team-main");
   legendBox.classList.remove("two");
   legendBox.classList.toggle("two", legendBox.offsetHeight > table.offsetHeight);
 }
@@ -990,15 +997,55 @@ function renderTeam(rows) {
         title: `${dayInfo[i].label}: ${n} starters` + (hole ? `, ${slots - n} holes` : "")});
     })));
 
-  // One line for the weeks. A week with fewer than weak_week_started started games is red.
-  const week = (name, w, i) => `${i === data.weeks.length - 1 ? name + " (finals)" : name}: ${w.started} started`
-    + (w.lost ? `, ${w.lost} lost (${Object.entries(w.lost_by || {}).map(([n, k]) => `${lastName(n)} ×${k}`).join(", ")})` : "")
-    + (w.holes ? `, ${w.holes} holes` : "");
-  document.getElementById("team-weeks").replaceChildren(...data.weeks.map((w, i) => {
-    const r = result.weeks[w];
-    return el("span", {className: rows.length && r.started < data.weak_week_started ? "warning" : "",
-      textContent: week(w, r, i) + " · "});
-  }), el("span", {textContent: `Total: ${result.total.started} started, ${result.total.lost} lost, ${result.total.holes} holes`}));
+  renderWeeks(rows, result);
+}
+
+// Max games in a week for the "vs ideal" row: each core player gets the most games that any NBA team plays that week,
+// and a day has at most one starter for each slot.
+const idealWeek = Object.fromEntries(data.weeks.map(w => {
+  const days = dayInfo.filter(d => d.week === w), games = {};
+  days.forEach(d => d.teams.forEach(t => games[t] = (games[t] || 0) + 1));
+  return [w, {most: Math.max(0, ...Object.values(games)), days: days.length}];
+}));
+const pctClass = r => r >= 0.9 ? "g-good" : r >= 0.7 ? "g-warn" : "g-bad";
+
+// The week table: games, started, lost, quality games and holes of your core, and two shares of the max games.
+// Used = started / the games of your core (the cost of logjams). vs ideal = started / the ideal week.
+function renderWeeks(rows, result) {
+  const core = rows.filter(isCore).map(t => t.player), starts = data.slots.length + (data.util ?? 1);
+  const count = (w, quality) => core.reduce((n, p) =>
+    n + dayInfo.filter(d => d.week === w && (!quality || d.quality) && plays(p, d)).length, 0);
+  const cols = data.weeks.map(w => {
+    const r = result.weeks[w], ideal = Math.min(core.length * idealWeek[w].most, starts * idealWeek[w].days);
+    return {...r, games: count(w, false), quality: count(w, true), ideal};
+  });
+  const sum = k => cols.reduce((n, c) => n + c[k], 0);
+  const lostBy = {};
+  cols.forEach(c => Object.entries(c.lost_by || {}).forEach(([n, k]) => lostBy[n] = (lostBy[n] || 0) + k));
+  cols.push({games: sum("games"), started: sum("started"), lost: sum("lost"), quality: sum("quality"),
+             holes: sum("holes"), ideal: sum("ideal"), lost_by: lostBy, total: true});
+
+  const names = by => Object.entries(by || {}).map(([n, k]) => `${n} ×${k}`).join(", ");
+  const pct = (got, all, title) => all
+    ? el("td", {className: "pct " + pctClass(got / all), textContent: `${Math.round(100 * got / all)}%`, title})
+    : el("td", {className: "muted", textContent: "—"});
+  const line = (label, title, cell) => el("tr", {}, el("th", {textContent: label, title}), ...cols.map(cell));
+  const table = document.getElementById("team-weeks");
+  table.tHead.replaceChildren(el("tr", {}, el("th"), ...data.weeks.map((w, i) =>
+    el("th", {textContent: i === data.weeks.length - 1 ? `${w} (finals)` : w})), el("th", {textContent: "Total"})));
+  table.tBodies[0].replaceChildren(
+    line("Games", "Playoff games of your core players (no rest nights)", c => el("td", {textContent: c.games})),
+    line("Started", "Games in the best lineup of each day", c => el("td", {textContent: c.started,
+      className: !c.total && core.length && c.started < data.weak_week_started ? "weak" : "",
+      title: !c.total && c.started < data.weak_week_started ? `Fewer than ${data.weak_week_started} started games` : ""})),
+    line("Lost (logjam)", "Games that sit because the slots are full", c => el("td", {textContent: c.lost,
+      className: c.lost ? "g-warn" : "", title: names(c.lost_by)})),
+    line("Quality games", "Games of your core on quality days", c => el("td", {textContent: c.quality})),
+    line("Holes", "Empty slots on quality days", c => el("td", {textContent: c.holes, className: c.holes ? "hole" : ""})),
+    line("Used", "Started / games: the share that logjams do not cost", c => pct(c.started, c.games,
+      `${c.started} of ${c.games} games start`)),
+    line("vs ideal", "Started / ideal: each core player with the most games of the week, at most "
+      + `${starts} starters a day`, c => pct(c.started, c.ideal, `${c.started} of ${c.ideal} ideal games`)));
 }
 
 // A part of the Fit cell: "9/12", colored by the share of his games that your started games get
