@@ -8,7 +8,7 @@
 //      Holes = the empty starting slots on quality days. The engine counts no streamers.
 //
 // The file has no DOM code. draft_board.py inlines it in the page as a plain script, and Node loads it with require().
-// The page gets the globals scoreCore, fit and TeamBuilder. The helpers stay inside the closure.
+// The page gets the globals scoreCore, fit, slotRoster and TeamBuilder. The helpers stay inside the closure.
 
 const TeamBuilder = (() => {
   // Per-day team sets for each data object, so that a call does not make them again.
@@ -133,27 +133,58 @@ const TeamBuilder = (() => {
     return _base;
   }
 
-  // Δ against scoreCore(core, data) when player joins the core: {started, finals, holes_removed}.
+  // Δ against scoreCore(core, data) when player joins the core:
+  // {started, finals, holes_removed, games, quality, quality_started}.
+  // games and quality: the games and quality-day games that the player can play (no rest nights).
+  // quality_started: Δ started games on quality days. started < games means that his games push out other players
+  // or that he sits, so the ratio started / games shows a logjam.
   // Only the days on which the team of the player plays can change, so fit() scores those days again.
   function fit(core, player, data) {
     const base = _baseDays(core, data), sets = _sets(data);
     const finalsWeek = data.weeks[data.weeks.length - 1];
     const ordered = _ordered(base.ordered.concat([player]));
-    let started = 0, finals = 0, holes = 0;
+    let started = 0, finals = 0, holes = 0, games = 0, quality = 0, qualityStarted = 0;
     data.days.forEach((day, i) => {
       if (!sets[i].teams.has(player.team)) return;
+      if (!(player.rests_b2b && sets[i].b2b.has(player.team))) {
+        games += 1;
+        if (day.quality) quality += 1;
+      }
       const before = base.days[i], after = _day(ordered, day, sets[i], data);
       const delta = after.started - before.started;
       started += delta;
       if (day.week === finalsWeek) finals += delta;
+      if (day.quality) qualityStarted += delta;
       holes += before.holes - after.holes;
     });
-    return { started, finals, holes_removed: holes };
+    return { started, finals, holes_removed: holes, games, quality, quality_started: qualityStarted };
   }
 
-  return { scoreCore, fit };
+  // Season slots for the team table: {slots: {slot: player}, bench: [players]}. players is in priority order
+  // (the page sorts by value, highest first). The same matching as a playoff day fills the position slots and Util.
+  // A player who does not fit goes to the bench. Legal lineups are a matroid, so this order gives the starting
+  // slots the highest-value legal lineup: a bench player can start only in place of a higher-value player.
+  function slotRoster(players, data) {
+    const slots = data.slots, utils = _utilNames(data), lineup = [], bench = [];
+    for (const p of players) {
+      const trial = lineup.concat([p]);
+      if (trial.length - Object.keys(_match(trial, slots)).length <= utils.length) lineup.push(p);
+      else bench.push(p);
+    }
+    const holder = _match(lineup, slots), out = {}, inSlot = new Set();
+    for (const slot of slots) {
+      if (slot in holder) {
+        out[slot] = lineup[holder[slot]];
+        inSlot.add(holder[slot]);
+      }
+    }
+    lineup.filter((_, i) => !inSlot.has(i)).forEach((p, i) => { out[utils[i]] = p; });
+    return { slots: out, bench };
+  }
+
+  return { scoreCore, fit, slotRoster };
 })();
 
-const { scoreCore, fit } = TeamBuilder;
+const { scoreCore, fit, slotRoster } = TeamBuilder;
 
 if (typeof module !== "undefined") module.exports = TeamBuilder;
