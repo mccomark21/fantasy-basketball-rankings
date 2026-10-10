@@ -143,6 +143,16 @@ def test_slot_roster_fills_position_slots_then_util_then_the_bench():
     assert result["bench"] == ["p5", "p6"]
 
 
+def test_slot_roster_moves_a_high_value_player_into_a_starting_slot():
+    # In value order, p2 (PG/SG) takes PG first. p3 (PG) then needs PG, so the matching moves p2 to SG.
+    # p4 and p5 are SG only: p4 gets Util and p5, the lowest value, goes to the bench.
+    players = [player(1, "BOS", "C", 9), player(2, "NY", "PG/SG", 8), player(3, "LAL", "PG", 7),
+               player(4, "BOS", "SG", 6), player(5, "NY", "SG", 5)]
+    result = engine(data([day(["BOS"])], players), [1, 2, 3, 4, 5])
+    assert result["slots"] == {"PG": "p3", "SG": "p2", "C": "p1", "Util": "p4"}
+    assert result["bench"] == ["p5"]
+
+
 def test_fit_for_500_players_takes_less_than_100_ms():
     rng = random.Random(36)
     teams = [f"T{i}" for i in range(30)]

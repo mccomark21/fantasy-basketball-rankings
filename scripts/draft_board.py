@@ -69,6 +69,21 @@ def legend(cfg):
     return lg
 
 
+def short_legend(cfg):
+    """(letter, CSS class, short rule) for each flag, for the legend next to the team table."""
+    f = cfg["flags"]
+
+    def rule(name, good, poor):
+        avg = f"{poor + 1}" if good - poor == 2 else f"{poor + 1}–{good - 1}"
+        return f"{name}: {good}+ green, {avg} gray, ≤{poor} yellow"
+
+    lg = [("S", "good", rule("Playoff games", f["good_playoff_games"], f["poor_playoff_games"])),
+          ("Q", "good", rule("Quality games", f["good_quality_games"], f["poor_quality_games"]))]
+    if f["avoid_week_games"]:
+        lg.append(("X", "bad", f"A week of ≤{f['avoid_week_games']} games"))
+    return lg
+
+
 def write_markdown(df, cfg):
     t = cfg["board"]
     dot = {"good": "🟢", "avg": "⚪", "warn": "🟡"}
@@ -465,7 +480,7 @@ def write_html(df, cfg, sim=None, days=None):
     """
     t = cfg["board"]
     note = f"All {len(df)} players in the projections, sorted by custom rank. Made {date.today():%Y-%m-%d}."
-    flags = "".join(f"<span>{flag_html(letter, cls)} {text}</span>" for letter, cls, text in legend(cfg))
+    flags = "".join(f"<span>{flag_html(letter, cls)}{text}</span>" for letter, cls, text in short_legend(cfg))
     if sim is None:
         tabs, combos = tab_bar(), ""
     else:
@@ -568,12 +583,16 @@ table.combo-table tr:last-child td { border-bottom: 0; }
 .team-weeks { margin: 6px 0 0; color: var(--fg); }
 .team-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 20px; }
 .team-main { min-width: 0; max-width: 100%; }
-.team-legend { flex: 0 1 240px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
-.team-legend h3 { font-size: 13px; margin: 0 0 4px; }
-.team-legend h3:not(:first-child) { margin-top: 10px; }
-.team-legend .legend { flex-direction: column; gap: 4px; margin: 0; }
-.team-legend table.key td { border: 0; text-align: left; padding: 2px 6px 2px 0; }
-.team-legend table.key td.d { text-align: center; padding: 2px 1px; }
+.team-legend { flex: 0 0 auto; width: 220px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px;
+        box-sizing: border-box; }
+.team-legend.two { width: 440px; column-count: 2; column-gap: 16px; }
+.team-legend h2 { font-size: 14px; margin: 0 0 6px; column-span: all; }
+.team-legend .lg { break-inside: avoid; margin-bottom: 8px; }
+.team-legend h3 { font-size: 12px; margin: 0 0 3px; color: var(--muted); font-weight: 600; }
+.team-legend .legend { display: flex; flex-direction: column; gap: 3px; margin: 0; color: var(--fg); font-size: 12px; }
+.team-legend .flag { width: 16px; height: 16px; font-size: 10px; margin-right: 6px; }
+.team-legend table.key td { border: 0; text-align: left; padding: 1px 6px 1px 0; font-size: 12px; }
+.team-legend table.key td.d { text-align: center; padding: 1px; }
 .fit-key { display: inline-block; padding: 0 4px; margin-right: 4px; border-radius: 4px; }
 .team button, td.add button, #show-taken { font: inherit; color: var(--fg); background: var(--bg);
         border: 1px solid var(--line); border-radius: 6px; padding: 0 8px; cursor: pointer; }
@@ -623,7 +642,7 @@ Playoff games is colored by week value: 2-game weeks cost the most. Quality game
 Risk: injury risk tier (— = no tier). The value already holds the average cost of injuries. A high tier means a larger chance to miss a whole playoff week.</p>
 <p>My team: + adds a player to the table at the top. × in the table removes him. × on a board row marks a player
 taken by another team and hides him (Show taken shows him again, ↺ undoes it). Reset clears your team and the taken
-players. The keeper stays. Slot: your core fills PG, SG, SF, PF, C and Util in value order, then your stream players.
+players. The keeper stays. Slot: your players fill PG, SG, SF, PF, C and Util in value order, highest first.
 A player with no open slot goes to the bench. An empty slot shows a position that you still need. The day columns show your core in the best lineup on each day: green = starts, purple = starts
 on a quality day, red ✕ = sits in a logjam, r = rests on a back-to-back, ○ = a stream player who plays. The last row shows
 the starters on each day, red for a hole (an empty slot on a quality day).</p>
@@ -643,25 +662,21 @@ __TABS__
 <div class="scroll"><table id="roster" class="plain team-table"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
 <p class="team-weeks" id="team-weeks"></p>
 </div>
-<aside class="team-legend" aria-label="Legend">
-<h3>Flags</h3>
-<p class="legend">__FLAGS__</p>
-<h3>Playoff days</h3>
-<table class="team-table key"><tbody>
+<aside class="team-legend" aria-labelledby="legend-title">
+<h2 id="legend-title">Legend</h2>
+<div class="lg"><h3>Flags</h3><p class="legend">__FLAGS__</p></div>
+<div class="lg"><h3>Playoff days</h3><table class="team-table key"><tbody>
 <tr><td class="d on">●</td><td>Starts</td></tr>
-<tr><td class="d on qcol">◆</td><td>Starts on a quality day</td></tr>
-<tr><td class="d sat">✕</td><td>Sits in a logjam</td></tr>
-<tr><td class="d rest">r</td><td>Rests on a back-to-back</td></tr>
-<tr><td class="d stream">○</td><td>Plays, as a stream player</td></tr>
-<tr><td class="d"></td><td>No game</td></tr>
-<tr><td class="d qcol"></td><td>Quality day (purple column)</td></tr>
-<tr><td class="d hole">2</td><td>Starters on a quality day with a hole</td></tr>
-</tbody></table>
-<h3>Fit</h3>
-<p class="legend"><span><span class="fit-key g-good">9/10</span> 90% or more of his games add to your starts</span>
-<span><span class="fit-key g-warn">7/10</span> 70% to 89%</span>
-<span><span class="fit-key g-bad">5/10</span> less than 70%: a logjam</span>
-<span>First part: playoff games. Second part: quality games. ⚑ = he fills a hole.</span></p>
+<tr><td class="d on qcol">◆</td><td>Starts, quality day</td></tr>
+<tr><td class="d sat">✕</td><td>Sits (logjam)</td></tr>
+<tr><td class="d rest">r</td><td>Rests (back-to-back)</td></tr>
+<tr><td class="d stream">○</td><td>Plays (stream player)</td></tr>
+<tr><td class="d qcol"></td><td>Quality day</td></tr>
+<tr><td class="d hole">2</td><td>Starters, with a hole</td></tr>
+</tbody></table></div>
+<div class="lg"><h3>Fit: adds / his games</h3><p class="legend">
+<span><span class="fit-key g-good">≥90%</span><span class="fit-key g-warn">70–89%</span><span class="fit-key g-bad">&lt;70%</span></span>
+<span>Games &amp; quality games. ⚑ fills a hole.</span></p></div>
 </aside>
 </div>
 </div>
@@ -878,8 +893,18 @@ function render() {
   renderTeam(rows);
   renderBoard(rows, core);
   applyFilters();
+  fitLegend();
   saveTeam();
 }
+
+// The legend is no taller than the team table. If one column is taller, the legend uses two columns.
+const legendBox = document.querySelector(".team-legend");
+function fitLegend() {
+  const table = document.querySelector(".team-main .scroll");
+  legendBox.classList.remove("two");
+  legendBox.classList.toggle("two", legendBox.offsetHeight > table.offsetHeight);
+}
+window.addEventListener("resize", fitLegend);
 
 // Budget line and warnings
 function renderHead(rows) {
@@ -926,10 +951,10 @@ function renderTeam(rows) {
     if (s === "sat") return el("td", {className: cls + " sat", textContent: "✕", title: `${d.label}: sits in a logjam`});
     return el("td", {className: cls + " rest", textContent: "r", title: `${d.label}: rests on a back-to-back`});
   };
-  // Slot rows: the position slots and Util, then the bench. The core goes in first, in value order, then the stream
-  // players. An open slot is an empty row, so the table shows the positions that you still need.
-  const byValue = (a, b) => b.player.value - a.player.value;
-  const order = [...rows.filter(isCore).sort(byValue), ...rows.filter(t => !isCore(t)).sort(byValue)];
+  // Slot rows: the position slots and Util, then the bench. All players go in by value, highest first, also stream
+  // players. So the starting slots hold the highest-value legal lineup, and each change slots the team again.
+  // An open slot is an empty row, so the table shows the positions that you still need.
+  const order = [...rows].sort((a, b) => b.player.value - a.player.value);
   const slotted = engine.slotRoster(order.map(t => t.player), data);
   const rowOf = new Map(order.map(t => [t.player, t]));
   const starting = [...data.slots, ...Array.from({length: data.util ?? 1}, (_, i) => i ? `Util${i + 1}` : "Util")];

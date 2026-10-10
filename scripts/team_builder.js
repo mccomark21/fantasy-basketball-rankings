@@ -161,8 +161,9 @@ const TeamBuilder = (() => {
   }
 
   // Season slots for the team table: {slots: {slot: player}, bench: [players]}. players is in priority order
-  // (the page puts the core first, in value order). The same matching as a playoff day fills the position slots
-  // and Util. A player who does not fit goes to the bench.
+  // (the page sorts by value, highest first). The same matching as a playoff day fills the position slots and Util.
+  // A player who does not fit goes to the bench. Legal lineups are a matroid, so this order gives the starting
+  // slots the highest-value legal lineup: a bench player can start only in place of a higher-value player.
   function slotRoster(players, data) {
     const slots = data.slots, utils = _utilNames(data), lineup = [], bench = [];
     for (const p of players) {
