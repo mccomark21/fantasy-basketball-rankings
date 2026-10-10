@@ -658,9 +658,9 @@ players. The keeper stays. Slot: your players fill PG, SG, SF, PF, C and Util in
 A player with no open slot goes to the bench. An empty slot shows a position that you still need. The day columns show your core in the best lineup on each day: green = starts, purple = starts
 on a quality day, red ✕ = sits in a logjam, r = rests on a back-to-back, ○ = a stream player who plays. The last row shows
 the starters on each day, red for a hole (an empty slot on a quality day).</p>
-<p>Team table footer: Games = your core players with a game that day. Started = the starters in the best lineup that
-day: green = all slots, yellow = 4 or 5, red = 3 or fewer or a hole on a quality day. Lost = games that sit in a logjam.
-Used = started / games for each week: 100% means that no game sits in a logjam. vs ideal = started / the games of a core of the same
+<p>Team table footer: Started = the starters in the best lineup that day: green = all slots, yellow = 4 or 5,
+red = 3 or fewer or a hole on a quality day. Used = started / the games of your core for each week: 100% means that
+no game sits in a logjam (point to the cell to see who sits). vs ideal = started / the games of a core of the same
 size in which each player has the most games of the week (at most 6 starters a day). Green = 90% or more.</p>
 <p>Fit: the games that the player adds to your started games / his playoff games, then the same for quality games.
 Green = 90% or more, yellow = 70% to 89%, red = less than 70%. A low share means a logjam: he sits, or he pushes out
@@ -1026,7 +1026,7 @@ const idealWeek = Object.fromEntries(data.weeks.map(w => {
 }));
 const pctClass = r => r >= 0.9 ? "g-good" : r >= 0.7 ? "g-warn" : "g-bad";
 
-// The footer of the team table: one cell for each day (games, started, lost) and one cell for each week (Used and
+// The footer of the team table: one cell for each day (started) and one cell for each week (Used and
 // vs ideal). Used = started / the games of your core (the cost of logjams). vs ideal = started / the ideal week.
 function renderFooter(rows, result) {
   const core = rows.filter(isCore).map(t => t.player), slots = data.slots.length + (data.util ?? 1);
@@ -1054,23 +1054,16 @@ function renderFooter(rows, result) {
   const share = (got, all, title) => el("td", {className: all ? pctClass(got / all) : "muted", textContent: pct(got, all), title});
 
   document.getElementById("roster").tFoot.replaceChildren(
-    dayRow(`Games · ${total("games")}`, "Core players with a game that day (no rest nights)",
-      (d, i) => el("td", {className: dayClass(d), textContent: games[i] || "", title: `${d.label}: ${games[i]} games`})),
     dayRow(`Started (of ${slots}) · ${total("started")} · ${total("holes")} holes`,
       "Starters in the best lineup that day. Red on a quality day: a hole.",
       (d, i) => el("td", {className: ["d", d.first ? "wk" : "", rows.length ? startClass(started[i], d) : ""].join(" "),
         textContent: started[i],
         title: `${d.label}: ${started[i]} of ${slots} slots` + (d.quality && started[i] < slots ? `, ${slots - started[i]} holes` : "")})),
-    dayRow(`Lost · ${total("lost")}`, "Games that sit in a logjam that day",
-      (d, i) => {
-        const sat = result.days[i].sat || [];
-        return el("td", {className: dayClass(d) + (sat.length ? " sat" : ""), textContent: sat.length || "",
-          title: sat.length ? `${d.label}: ${sat.join(", ")} sit` : ""});
-      }),
     weekRow(`Used (started / games) · ${pct(total("started"), total("games"))}`,
       "The share of your core's games that start. Logjams lower it.",
       w => {
-        const td = share(w.started, w.games, `${w.started} of ${w.games} games start`);
+        const lost = Object.entries(w.lost_by || {}).map(([n, k]) => `${n} ×${k}`).join(", ");
+        const td = share(w.started, w.games, `${w.started} of ${w.games} games start` + (lost ? `. Logjam: ${lost}` : ""));
         if (core.length && w.started < data.weak_week_started) {
           td.textContent += " ⚠";
           td.title += `. Fewer than ${data.weak_week_started} started games.`;
