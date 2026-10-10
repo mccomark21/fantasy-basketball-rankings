@@ -2,6 +2,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -143,8 +144,9 @@ def write_page(monkeypatch, tmp_path, sim=None, days=None):
 
 def test_board_has_the_core_combos_tab_only_when_the_simulator_has_run(monkeypatch, tmp_path):
     html = write_page(monkeypatch, tmp_path)
-    assert re.findall(r'data-tab="(\w+)"', html) == ["board", "myteam"]
-    assert 'id="keeper"' not in html
+    assert 'data-tab=' not in html and 'id="keeper"' not in html
+    # The team table is on the board without the simulator files too
+    assert 'id="roster"' in html
     df, cfg = PAGE_DF, PAGE_CFG
 
     combos = draft_board.top_combos(GROUPS).assign(base=30.0, edge=10.0, price=50.0)
@@ -152,7 +154,7 @@ def test_board_has_the_core_combos_tab_only_when_the_simulator_has_run(monkeypat
                             "rr_win_pct": [60.0, 58.0]}, index=pd.Index(["Flagg", "Buzelis"], name="keeper"))
     draft_board.write_html(df, cfg, (combos, summary))
     html = (tmp_path / "draft_board.html").read_text(encoding="utf-8")
-    assert re.findall(r'data-tab="(\w+)"', html) == ["board", "myteam", "combos"]
+    assert re.findall(r'data-tab="(\w+)"', html) == ["board", "combos"]
     assert re.findall(r'<option value="([^"]*)"', html) == ["Flagg", "Buzelis"]
     assert "Keeper cost $56" in html and ">+10</td>" in html and ">$50</td>" in html
     # The size filter shows the combos of 3 and 4 when the page opens
@@ -239,3 +241,10 @@ def test_markdown_board_has_no_team_builder_columns(monkeypatch, tmp_path):
     assert ("| Rank | Player | Flags | Team | Pos | $ | League $ | Diff | Sched | Playoff games | Quality games "
             "| Games | Risk | Stats |") in md
     assert "Fit" not in md and "team-data" not in md
+
+
+def test_each_board_row_has_an_add_button_and_a_taken_button():
+    r = SimpleNamespace(player_id=7, name="Tyrese Maxey")
+    cell = draft_board.add_cell(r)
+    assert 'class="add" data-id="7"' in cell and 'class="take" data-id="7"' in cell
+    assert 'aria-label="Mark Tyrese Maxey taken"' in cell

@@ -203,9 +203,13 @@ def html_columns(cfg, lift=False):
 
 
 def add_cell(r):
-    """The + button that adds the player to your team. The page turns it off for a player on your team."""
-    return td(f'<button type="button" class="add" data-id="{int(r.player_id)}" '
-              f'aria-label="Add {escape(r.name)} to my team">+</button>', cls="add")
+    """The + button that adds the player to your team and the X button that marks him taken by another team.
+
+    The page turns off + for a player on your team, and X for a player on your team.
+    """
+    i, name = int(r.player_id), escape(r.name)
+    return td(f'<button type="button" class="add" data-id="{i}" aria-label="Add {name} to my team">+</button>'
+              f'<button type="button" class="take" data-id="{i}" aria-label="Mark {name} taken">×</button>', cls="add")
 
 
 def lift_cell(r):
@@ -258,7 +262,8 @@ def filter_bar(df):
             f'<span class="pos" role="group" aria-label="Positions">{pos}</span>'
             f'<select id="team" aria-label="Team">{opts}</select>{flags}'
             '<span id="combo" hidden><span></span><button type="button" aria-label="Clear the combo">Clear</button></span>'
-            '<span id="count"></span></div>')
+            '<button type="button" id="show-taken" aria-pressed="false" title="Show the players that you marked taken">'
+            'Show taken</button><span id="count"></span></div>')
 
 
 def top_combos(groups, top=10):
@@ -379,16 +384,18 @@ def combo_panel(combos, summary, df, cfg):
 
 
 def tab_bar(keepers=None):
-    """Board and My team tabs. With the simulator files, also the Core combos tab and the keeper list.
+    """The Board tab. With the simulator files, also the Core combos tab and the keeper list.
 
     keepers: the keeper names from the simulator, or None. The keeper list sets the Lift column, the combo list
     and the keeper on your team.
     """
-    tabs = [("board", "Board"), ("myteam", "My team"), *([("combos", "Core combos")] if keepers else [])]
+    if not keepers:
+        return ""
+    tabs = [("board", "Board"), ("combos", "Core combos")]
     buttons = "".join(f'<button type="button" role="tab" data-tab="{k}" aria-selected="{str(not i).lower()}">{name}</button>'
                       for i, (k, name) in enumerate(tabs))
-    opts = "".join(f'<option value="{escape(k)}">{escape(k)}</option>' for k in keepers or [])
-    keeper = f'<label>Keeper <select id="keeper" aria-label="Keeper">{opts}</select></label>' if keepers else ""
+    opts = "".join(f'<option value="{escape(k)}">{escape(k)}</option>' for k in keepers)
+    keeper = f'<label>Keeper <select id="keeper" aria-label="Keeper">{opts}</select></label>'
     return f'<nav class="tabs"><span role="tablist">{buttons}</span>{keeper}</nav>'
 
 
@@ -551,37 +558,44 @@ table.combo-table tr:last-child td { border-bottom: 0; }
 .g-good { background: color-mix(in srgb, var(--good) 35%, transparent); }
 .g-avg { background: color-mix(in srgb, var(--avg) 50%, transparent); }
 .g-warn { background: color-mix(in srgb, var(--warn) 45%, transparent); }
-.teambar { margin: 12px 0 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
-.chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border: 1px solid var(--line);
-        border-radius: 14px; background: var(--head); }
-.chip.stream { border-style: dashed; background: none; }
-.chip-name { font-weight: 600; }
+.team { margin: 12px 0 0; }
+.team-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-bottom: 6px; }
+.team-head h2 { font-size: 16px; margin: 0; }
+.team-head .warning, .team-weeks .warning { color: var(--bad); font-weight: 600; }
+.team-weeks { margin: 6px 0 0; color: var(--fg); }
+.team button, td.add button, #show-taken { font: inherit; color: var(--fg); background: var(--bg);
+        border: 1px solid var(--line); border-radius: 6px; padding: 0 8px; cursor: pointer; }
+.team button[aria-pressed="true"], #show-taken[aria-pressed="true"] { background: var(--q); border-color: var(--q); color: #fff; }
+.team-head button[data-act="reset"] { border-color: var(--bad); color: var(--bad); font-weight: 600; }
 .kmark { display: inline-block; padding: 0 4px; margin-right: 4px; border-radius: 4px; background: var(--q); color: #fff;
         font-size: 11px; font-weight: 700; }
-.team-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
-.team-summary .warning { color: var(--bad); font-weight: 600; }
-.teambar button, #myteam button, td.add button { font: inherit; color: var(--fg); background: var(--bg);
-        border: 1px solid var(--line); border-radius: 6px; padding: 0 8px; cursor: pointer; }
-.teambar button[aria-pressed="true"], #myteam button[aria-pressed="true"] { background: var(--q); border-color: var(--q); color: #fff; }
 td.add { padding: 2px 6px; }
-td.add button { min-width: 28px; font-weight: 700; }
+td.add button { min-width: 26px; font-weight: 700; margin-right: 3px; }
+td.add button.take { color: var(--bad); }
 td.add button:disabled { opacity: 0.35; cursor: default; }
 tr.mine { background: color-mix(in srgb, var(--q) 12%, transparent); }
-input.price { width: 56px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+tr.taken { opacity: 0.45; }
+input.price { width: 52px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
         border-radius: 6px; padding: 0 4px; }
-#myteam h2 { font-size: 16px; margin: 16px 0 6px; }
-#myteam .team-summary { margin: 12px 0 8px; }
 table.plain { width: auto; border: 1px solid var(--line); border-radius: 8px; border-collapse: separate; border-spacing: 0; }
 table.plain th { position: static; cursor: default; }
 table.plain th:hover { color: inherit; }
-table.plain th:first-child, table.plain td:first-child { text-align: left; }
-table.plain tr:last-child td, table.plain tr:last-child th { border-bottom: 0; }
-table.days td, table.days th { text-align: center; font-size: 12px; padding: 4px 6px; }
-table.days tbody th { position: sticky; left: 0; background: var(--head); text-align: left; }
-table.days thead th.q { box-shadow: inset 0 -3px var(--q); }
-td.hole, td.weak { background: color-mix(in srgb, var(--bad) 35%, transparent); }
-td.room { background: color-mix(in srgb, var(--avg) 50%, transparent); color: var(--muted); }
+table.team-table th, table.team-table td { padding: 3px 6px; }
+table.team-table td.l, table.team-table th.l { text-align: left; }
+table.team-table tr.open td { color: var(--muted); }
+table.team-table .d { width: 18px; min-width: 18px; padding: 3px 1px; text-align: center; font-size: 12px; }
+table.team-table th.d { font-size: 11px; font-weight: 600; line-height: 1.15; }
+table.team-table .wk { border-left: 2px solid var(--line); }
+table.team-table .qcol { background: color-mix(in srgb, var(--q) 10%, transparent); }
+table.team-table th.qcol { color: var(--q); }
+table.team-table tfoot td { border-top: 2px solid var(--line); border-bottom: 0; font-weight: 600; }
+td.d.on { background: color-mix(in srgb, var(--good) 40%, transparent); }
+td.d.on.qcol { background: color-mix(in srgb, var(--q) 45%, transparent); color: #fff; }
+td.d.sat, td.d.hole { background: color-mix(in srgb, var(--bad) 45%, transparent); }
+td.d.rest { color: var(--muted); }
+td.d.stream { color: var(--muted); }
+td.fit span { display: inline-block; padding: 0 4px; border-radius: 4px; }
+.g-bad { background: color-mix(in srgb, var(--bad) 35%, transparent); }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -596,30 +610,28 @@ Playoff games is colored by week value: 2-game weeks cost the most. Quality game
 <p>$: auction dollars. League $: expected price in this league. Diff: $ − League $ (green = bargain). Lift: your title % with the player minus without him, for the keeper in the keeper list (only when the auction simulator has run).</p>
 <p>Games is red below __LOW__. ⚠ = fewer than __LOW__ games.
 Risk: injury risk tier (— = no tier). The value already holds the average cost of injuries. A high tier means a larger chance to miss a whole playoff week.</p>
-<p>+: add the player to your team (the team bar and the My team tab). Fit: the change in started games of your core
-in the playoff weeks when the player joins it as a core player. ⚑ = he fills at least one hole (an empty slot on a quality day).
-The finals change breaks ties in the sort. The page keeps your team in this browser.</p>
+<p>My team: + adds a player to the table at the top. × in the table removes him. × on a board row marks a player
+taken by another team and hides him (Show taken shows him again, ↺ undoes it). Reset clears your team and the taken
+players. The keeper stays. The day columns show your core in the best lineup on each day: green = starts, purple = starts
+on a quality day, red ✕ = sits in a logjam, r = rests on a back-to-back, ○ = a stream player who plays. The last row shows
+the starters on each day, red for a hole (an empty slot on a quality day).</p>
+<p>Fit: the games that the player adds to your started games / his playoff games, then the same for quality games.
+Green = 90% or more, yellow = 70% to 89%, red = less than 70%. A low share means a logjam: he sits, or he pushes out
+one of your players. ⚑ = he fills at least one hole. The page keeps your team in this browser.</p>
 <p>Point to a flag to see the reason. Click a column header to sort.
 Pick one or more positions to show players who can play any of them.
 Pick one or more S or Q colors to show players with those flags. A player with an X or no team has no S or Q flags.</p>
 </details>
 __TABS__
 <section id="board" role="tabpanel">
-<div class="teambar" aria-label="My team"><div id="chips" class="chips"></div><div class="team-summary"></div></div>
+<div class="team" aria-label="My team">
+<div class="team-head"><h2>My team</h2><span id="budget"></span><span id="team-warn" class="warning"></span>
+<button type="button" data-act="reset" title="Clear your team and the taken players. The keeper stays.">Reset</button></div>
+<div class="scroll"><table id="roster" class="plain team-table"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
+<p class="team-weeks" id="team-weeks"></p>
+</div>
 __FILTERS__
 __BODY__
-</section>
-<section id="myteam" role="tabpanel" hidden>
-<div class="team-summary"></div>
-<div class="scroll"><table id="roster" class="plain"><thead><tr><th>Player</th><th>Team</th><th>Pos</th><th>Rank</th>
-<th>$</th><th>League $</th><th>Price</th><th>Core</th><th>Risk</th><th></th></tr></thead><tbody></tbody></table></div>
-<h2>Playoff weeks</h2>
-<p>Started and lost games of your core. Lost: a game that the lineup sits in a logjam. Hole: an empty slot on a quality day.</p>
-<div class="scroll"><table id="weeks" class="plain"><thead><tr><th>Week</th><th>Started</th><th>Lost</th><th>Holes</th></tr></thead>
-<tbody></tbody></table></div>
-<h2>Playoff days</h2>
-<p>The lineup of your core on each day. Q = quality day. Red = hole. Gray = stream room (an empty slot on a busy day).</p>
-<div class="scroll"><table id="days" class="plain days"><thead></thead><tbody></tbody></table></div>
 </section>
 <section id="combos" role="tabpanel" hidden>
 __COMBOS__
@@ -642,6 +654,7 @@ const search = document.getElementById("search"), team = document.getElementById
 const posButtons = [...document.querySelectorAll(".filters .pos button")];
 const flagButtons = [...document.querySelectorAll(".filters .flags button")];
 const pressed = bs => bs.filter(b => b.getAttribute("aria-pressed") === "true");
+const showTaken = document.getElementById("show-taken");
 const allRows = [...document.querySelectorAll("#board tbody tr")];
 allRows.forEach(tr => tr.dataset.name = fold(tr.querySelector(".name").textContent));
 function applyFilters() {
@@ -657,13 +670,15 @@ function applyFilters() {
       && (!group || group.has(tr.dataset.name.replace(" ⚠", "")))
       && (!team.value || tr.dataset.team === team.value)
       && (!picked.length || tr.dataset.pos.split("/").some(p => picked.includes(p)))
-      && flagOk(tr);
+      && flagOk(tr)
+      && (showTaken.getAttribute("aria-pressed") === "true" || !tr.classList.contains("taken"));
     tr.hidden = !ok;
     shown += ok;
   });
-  document.getElementById("count").textContent = `${shown} of ${allRows.length} players`;
+  const taken = allRows.filter(tr => tr.classList.contains("taken")).length;
+  document.getElementById("count").textContent = `${shown} of ${allRows.length} players` + (taken ? ` · ${taken} taken` : "");
 }
-[...posButtons, ...flagButtons].forEach(b => b.addEventListener("click", () => {
+[...posButtons, ...flagButtons, showTaken].forEach(b => b.addEventListener("click", () => {
   b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") === "true" ? "false" : "true");
   applyFilters();
 }));
@@ -748,7 +763,7 @@ function loadTeam() {
 }
 function saveTeam() {
   try {
-    localStorage.setItem(STORE, JSON.stringify({keeper: keeper ? keeper.value : null, keeperCore, picks}));
+    localStorage.setItem(STORE, JSON.stringify({keeper: keeper ? keeper.value : null, keeperCore, picks, taken: [...taken]}));
   } catch (e) { /* no storage */ }
 }
 const saved = loadTeam();
@@ -756,6 +771,8 @@ const saved = loadTeam();
 // core is true or false after a Core/Stream toggle, or null for the default (rank <= core_max_rank).
 let picks = Array.isArray(saved.picks) ? saved.picks.filter(t => t && byId.has(String(t.id))) : [];
 let keeperCore = typeof saved.keeperCore === "boolean" ? saved.keeperCore : null;
+// taken: the ids of the players that other teams bought (× on a board row)
+const taken = new Set(Array.isArray(saved.taken) ? saved.taken.map(String).filter(id => byId.has(id)) : []);
 if (keeper && [...keeper.options].some(o => o.value === saved.keeper)) {
   keeper.value = saved.keeper;
   showKeeper();
@@ -788,137 +805,147 @@ const removeButton = t => el("button", {type: "button", "data-act": "remove", "d
   "aria-label": `Remove ${t.player.name}`, textContent: "×"});
 const kMark = () => el("span", {className: "kmark", title: "Keeper", textContent: "K"});
 
-// Board rows: the + button and the Fit cell of each player. $ and Risk on the My team tab are copies of board cells.
-const boardRows = allRows.map(tr => ({tr, add: tr.querySelector("button.add"), fit: tr.querySelector("td.fit")}));
-const rowById = new Map(boardRows.map(r => [r.add.dataset.id, r.tr]));
+// The playoff days. first = the first day of a week (a border in the table).
+const dayInfo = data.days.map((d, i) => {
+  const [y, m, day] = d.date.split("-").map(Number);
+  const weekday = new Date(y, m - 1, day).toLocaleDateString("en-US", {weekday: "short"});
+  return {...d, teams: new Set(d.teams), b2b: new Set(d.b2b), label: `${weekday} ${m}/${day}`, letter: weekday[0],
+          first: i === 0 || data.days[i - 1].week !== d.week};
+});
+const dayClass = d => ["d", d.first ? "wk" : "", d.quality ? "qcol" : ""].filter(Boolean).join(" ");
+const plays = (p, d) => d.teams.has(p.team) && !(p.rests_b2b && d.b2b.has(p.team));
+// Games (or quality games) of a player in each playoff week, with no rest nights. For example "4-3-4".
+function weekGames(p, quality) {
+  return data.weeks.map(w => dayInfo.filter(d => d.week === w && (!quality || d.quality) && plays(p, d)).length).join("-");
+}
+
+const boardRows = allRows.map(tr => ({tr, add: tr.querySelector("button.add"), take: tr.querySelector("button.take"),
+                                      fit: tr.querySelector("td.fit")}));
 const boardHeads = [...document.querySelectorAll("#board thead th")];
 const fitHead = boardHeads.find(th => th.textContent === "Fit");
-function boardCell(id, head) {
-  const tr = rowById.get(String(id)), i = boardHeads.findIndex(th => th.textContent === head);
-  return tr && i >= 0 ? tr.cells[i].cloneNode(true) : el("td", {textContent: "—"});
-}
 
 let last = null;
 function render() {
   const rows = myTeam();
   const core = rows.filter(isCore).map(t => t.player).sort((a, b) => b.value - a.value);
   last = {core, result: engine.scoreCore(core, data)};
-  renderChips(rows);
-  renderSummary(rows);
-  renderRoster(rows);
-  renderWeeks(last.result);
-  renderDays(last.result);
+  renderHead(rows);
+  renderTeam(rows);
   renderBoard(rows, core);
+  applyFilters();
   saveTeam();
 }
 
-function renderChips(rows) {
-  const chips = rows.map(t => el("span", {className: isCore(t) ? "chip" : "chip stream"},
-    t.keeper ? kMark() : null, el("span", {className: "chip-name", textContent: t.player.name}),
-    t.keeper ? money(t.price) : priceInput(t), coreButton(t), t.keeper ? null : removeButton(t)));
-  document.getElementById("chips").replaceChildren(...(chips.length ? chips
-    : [el("span", {className: "muted", textContent: "No players on your team. Click + on a row to add a player."})]));
-}
-
-// Budget line, score line and warnings, on the Board tab and on the My team tab
-function renderSummary(rows) {
-  const {core, result} = last;
+// Budget line and warnings
+function renderHead(rows) {
+  const {core} = last;
   const spent = rows.reduce((s, t) => s + (Number(t.price) || 0), 0), left = data.budget - spent;
   const empty = data.spots - rows.length;
+  document.getElementById("budget").textContent = `$${spent} spent · $${left} left · max bid `
+    + (empty > 0 ? "$" + (left - (empty - 1)) : "—") + ` · Core ${core.length} · Stream ${rows.length - core.length}`;
   const warnings = [];
-  if (core.length > data.spots - 2) warnings.push(`A core of ${core.length} players leaves fewer than 2 stream spots.`);
-  if (rows.length >= data.spots) warnings.push(`The roster is full (${rows.length} of ${data.spots} players). The + buttons are off.`);
-  document.querySelectorAll(".team-summary").forEach(box => box.replaceChildren(
-    el("span", {textContent: `$${spent} spent · $${left} left · max bid ${empty > 0 ? "$" + (left - (empty - 1)) : "—"}`}),
-    el("span", {textContent: `Core ${core.length} · Stream ${rows.length - core.length} · Started ${result.total.started}`
-      + ` · Lost ${result.total.lost} · Holes ${result.total.holes} · Finals ${result.finals.started}`}),
-    ...warnings.map(w => el("span", {className: "warning", textContent: w})),
-    el("button", {type: "button", "data-act": "reset", title: "Clear the team. The keeper stays.", textContent: "Reset"})));
+  if (core.length > data.spots - 2) warnings.push(`A core of ${core.length} leaves fewer than 2 stream spots.`);
+  if (rows.length >= data.spots) warnings.push("The roster is full.");
+  document.getElementById("team-warn").textContent = warnings.join(" ");
 }
 
-function renderRoster(rows) {
-  const body = document.querySelector("#roster tbody");
-  body.replaceChildren(...rows.map(t => el("tr", {},
-    el("td", {className: "name"}, t.keeper ? kMark() : null, t.player.name),
-    el("td", {textContent: t.player.team ?? "—"}),
-    el("td", {textContent: t.player.pos.join("/") || "—"}),
-    el("td", {textContent: t.player.rank}),
-    boardCell(t.id, "$"),
-    el("td", {textContent: money(t.player.league_price)}),
-    el("td", {}, t.keeper ? money(t.price) : priceInput(t)),
-    el("td", {}, coreButton(t)),
-    boardCell(t.id, "Risk"),
-    el("td", {}, t.keeper ? null : removeButton(t)))));
-  if (!rows.length) body.append(el("tr", {}, el("td", {colSpan: 10, className: "muted", textContent: "No players on your team."})));
-}
+// The team table: one row for each roster spot, with a cell for each playoff day
+function renderTeam(rows) {
+  const {result} = last;
+  const table = document.getElementById("roster");
+  const info = ["#", "Player", "Pos", "Paid", "Value", "Playoff games", "Quality games", "Core", ""];
+  const left = new Set(["Player", "Pos"]);
+  const weekHeads = data.weeks.map((w, i) => el("th", {colSpan: dayInfo.filter(d => d.week === w).length, className: "wk",
+    textContent: i === data.weeks.length - 1 ? `${w} (finals)` : w}));
+  table.tHead.replaceChildren(
+    el("tr", {}, ...info.map(h => el("th", {rowSpan: 2, className: left.has(h) ? "l" : "", textContent: h})), ...weekHeads),
+    el("tr", {}, ...dayInfo.map(d => el("th", {className: dayClass(d), textContent: d.letter,
+      title: `${d.label} · ${d.nba_games} NBA games${d.quality ? " · quality day" : ""}`}))));
 
-// One row for each playoff week (the last week is the finals) and a total row
-function renderWeeks(result) {
-  const lostText = (lost, by) => [lost, ...Object.entries(by).map(([n, k]) => `${lastName(n)} ×${k}`)].join(" · ");
-  const row = (label, w, by, weak) => el("tr", {}, el("td", {textContent: label}),
-    el("td", {className: weak ? "weak" : "", textContent: w.started,
-              title: weak ? `Fewer than ${data.weak_week_started} started games` : ""}),
-    el("td", {textContent: lostText(w.lost, by)}),
-    el("td", {className: w.holes ? "hole" : "", textContent: w.holes}));
-  const allLost = {};
-  const rows = data.weeks.map((name, i) => {
-    const w = result.weeks[name], by = w.lost_by || {};
-    Object.entries(by).forEach(([n, k]) => allLost[n] = (allLost[n] || 0) + k);
-    const label = i === data.weeks.length - 1 ? `${name} (finals)` : name;
-    return row(label, w, by, w.started < data.weak_week_started);
+  // The state of each core player on each day, from the engine result
+  const state = result.days.map(d => {
+    const m = new Map();
+    Object.values(d.starters || {}).forEach(n => m.set(n, "on"));
+    (d.sat || []).forEach(n => m.set(n, "sat"));
+    (d.rested || []).forEach(n => m.set(n, "rest"));
+    return m;
   });
-  document.querySelector("#weeks tbody").replaceChildren(...rows, row("Total", result.total, allLost, false));
+  const dayCell = (t, i) => {
+    const d = dayInfo[i], p = t.player, cls = dayClass(d);
+    if (!d.teams.has(p.team)) return el("td", {className: cls});
+    if (!isCore(t)) return el("td", {className: cls + " stream", textContent: "○", title: `${d.label}: plays (stream player)`});
+    const s = state[i].get(p.name);
+    if (s === "on") return el("td", {className: cls + " on", textContent: d.quality ? "◆" : "●", title: `${d.label}: starts`});
+    if (s === "sat") return el("td", {className: cls + " sat", textContent: "✕", title: `${d.label}: sits in a logjam`});
+    return el("td", {className: cls + " rest", textContent: "r", title: `${d.label}: rests on a back-to-back`});
+  };
+  const filled = rows.map((t, n) => el("tr", {className: isCore(t) ? "" : "stream"},
+    el("td", {textContent: n + 1}),
+    el("td", {className: "l name"}, t.keeper ? kMark() : null, t.player.name),
+    el("td", {className: "l", textContent: t.player.pos.join("/") || "—"}),
+    el("td", {}, t.keeper ? money(t.price) : priceInput(t)),
+    el("td", {textContent: t.player.value.toFixed(2)}),
+    el("td", {textContent: weekGames(t.player, false)}),
+    el("td", {textContent: weekGames(t.player, true)}),
+    el("td", {}, coreButton(t)),
+    el("td", {}, t.keeper ? null : removeButton(t)),
+    ...dayInfo.map((_, i) => dayCell(t, i))));
+  const open = Array.from({length: Math.max(0, data.spots - rows.length)}, (_, n) => el("tr", {className: "open"},
+    el("td", {textContent: rows.length + n + 1}), el("td", {className: "l", colSpan: 8, textContent: "— empty —"}),
+    ...dayInfo.map(d => el("td", {className: dayClass(d)}))));
+  table.tBodies[0].replaceChildren(...filled, ...open);
+
+  // Starters on each day. Red: a hole (an empty slot on a quality day).
+  const slots = data.slots.length + (data.util ?? 1);
+  table.tFoot.replaceChildren(el("tr", {}, el("td", {className: "l", colSpan: 9, textContent: `Starters (of ${slots})`}),
+    ...result.days.map((d, i) => {
+      const n = slots - (d.empty || []).length, hole = d.quality && n < slots;
+      return el("td", {className: dayClass(dayInfo[i]) + (hole ? " hole" : ""), textContent: n,
+        title: `${dayInfo[i].label}: ${n} starters` + (hole ? `, ${slots - n} holes` : "")});
+    })));
+
+  // One line for the weeks. A week with fewer than weak_week_started started games is red.
+  const week = (name, w, i) => `${i === data.weeks.length - 1 ? name + " (finals)" : name}: ${w.started} started`
+    + (w.lost ? `, ${w.lost} lost (${Object.entries(w.lost_by || {}).map(([n, k]) => `${lastName(n)} ×${k}`).join(", ")})` : "")
+    + (w.holes ? `, ${w.holes} holes` : "");
+  document.getElementById("team-weeks").replaceChildren(...data.weeks.map((w, i) => {
+    const r = result.weeks[w];
+    return el("span", {className: rows.length && r.started < data.weak_week_started ? "warning" : "",
+      textContent: week(w, r, i) + " · "});
+  }), el("span", {textContent: `Total: ${result.total.started} started, ${result.total.lost} lost, ${result.total.holes} holes`}));
 }
 
-// One column for each playoff day. A slot shows the starter, a hole (red) or stream room (gray).
-function renderDays(result) {
-  const slots = [...data.slots, ...(data.util ? ["Util"] : [])];
-  const info = new Map(data.days.map(d => [d.date, d]));
-  const head = d => {
-    const i = info.get(d.date) || {}, [y, m, day] = d.date.split("-").map(Number);
-    const weekday = new Date(y, m - 1, day).toLocaleDateString("en-US", {weekday: "short"});
-    return el("th", {className: d.quality ? "q" : "", title: d.quality ? "Quality day" : "Busy day"},
-      el("div", {className: "muted", textContent: i.week ?? ""}), el("div", {textContent: `${weekday} ${m}/${day}`}),
-      el("div", {className: "muted", textContent: `${i.nba_games ?? ""} games${d.quality ? " · Q" : ""}`}));
-  };
-  const cell = (d, slot) => {
-    const who = (d.starters || {})[slot];
-    if (who) return el("td", {textContent: lastName(who), title: who});
-    if (!(d.empty || []).includes(slot)) return el("td");
-    return d.quality ? el("td", {className: "hole", textContent: "hole", title: "Empty slot on a quality day"})
-      : el("td", {className: "room", textContent: "stream", title: "Stream room: an empty slot on a busy day"});
-  };
-  const names = list => el("td", {textContent: (list || []).map(lastName).join(", "), title: (list || []).join(", ")});
-  document.querySelector("#days thead").replaceChildren(el("tr", {}, el("th", {textContent: "Slot"}), ...result.days.map(head)));
-  document.querySelector("#days tbody").replaceChildren(
-    ...slots.map(s => el("tr", {}, el("th", {textContent: s}), ...result.days.map(d => cell(d, s)))),
-    el("tr", {}, el("th", {textContent: "Sat", title: "Sits in a logjam"}), ...result.days.map(d => names(d.sat))),
-    el("tr", {}, el("th", {textContent: "Rested", title: "Rests on the second night of a back-to-back"}),
-      ...result.days.map(d => names(d.rested))));
+// A part of the Fit cell: "9/12", colored by the share of his games that your started games get
+function share(got, all) {
+  const r = all ? got / all : 1;
+  const cls = !all ? "muted" : r >= 0.9 ? "g-good" : r >= 0.7 ? "g-warn" : "g-bad";
+  return el("span", {className: cls, textContent: `${got}/${all}`});
 }
 
-// The + buttons and the Fit column: Δ started games when the player joins your core as a core player
+// The + and × buttons and the Fit column
 function renderBoard(rows, core) {
   const mine = new Set(rows.map(t => String(t.id))), full = rows.length >= data.spots;
-  boardRows.forEach(({tr, add, fit}) => {
-    const id = add.dataset.id, on = mine.has(id), p = byId.get(id);
+  boardRows.forEach(({tr, add, take, fit}) => {
+    const id = add.dataset.id, on = mine.has(id), gone = taken.has(id), p = byId.get(id);
     tr.classList.toggle("mine", on);
-    add.disabled = on || full;
-    add.title = on ? "On your team" : full ? "The roster is full" : "Add to my team";
+    tr.classList.toggle("taken", gone);
+    add.disabled = on || full || gone;
+    add.title = on ? "On your team" : gone ? "Taken" : full ? "The roster is full" : "Add to my team";
+    take.disabled = on;
+    take.textContent = gone ? "↺" : "×";
+    take.title = on ? "On your team" : gone ? "Not taken (undo)" : "Taken by another team";
     if (!rows.length || on || !p) {
-      fit.textContent = "";
+      fit.replaceChildren();
       fit.dataset.v = -999;
-      fit.removeAttribute("style");
       fit.removeAttribute("title");
       return;
     }
     const d = engine.fit(core, p, data);
-    const sign = v => (v > 0 ? "+" : "") + v;
-    fit.textContent = sign(d.started) + (d.holes_removed > 0 ? " ⚑" : "");
-    fit.dataset.v = d.started + d.finals / 100;
-    fit.title = `${sign(d.started)} started games, ${sign(d.finals)} in the finals, ${d.holes_removed} holes removed`;
-    const alpha = Math.min(Math.abs(d.started) / 10, 1) * 55;
-    fit.style.background = `color-mix(in srgb, var(${d.started > 0 ? "--good" : "--bad"}) ${alpha}%, transparent)`;
+    fit.replaceChildren(share(d.started, d.games), " & ", share(d.quality_started, d.quality),
+                        d.holes_removed > 0 ? " ⚑" : "");
+    fit.dataset.v = d.started + d.quality_started / 100;
+    fit.title = `Adds ${d.started} of his ${d.games} playoff games and ${d.quality_started} of his ${d.quality} quality games`
+      + ` (${d.finals} in the finals). ${d.holes_removed} holes filled.`;
   });
   // Keep the sort by Fit when the values change
   if (fitHead.classList.contains("asc") || fitHead.classList.contains("desc")) sortTable(fitHead, fitHead.classList.contains("desc"));
@@ -927,6 +954,7 @@ function renderBoard(rows, core) {
 function addPlayer(id) {
   const p = byId.get(id), rows = myTeam();
   if (!p || rows.length >= data.spots || rows.some(t => sameId(t.id, id))) return;
+  taken.delete(String(id));
   // The first price is League $ (at least $1). Change it in the price box.
   picks.push({id: p.id, price: Math.max(1, Math.round(p.league_price ?? 1)), core: null});
   render();
@@ -935,6 +963,10 @@ document.addEventListener("click", e => {
   const b = e.target.closest("button");
   if (!b) return;
   if (b.classList.contains("add")) return addPlayer(b.dataset.id);
+  if (b.classList.contains("take")) {
+    if (!taken.delete(b.dataset.id)) taken.add(b.dataset.id);
+    return render();
+  }
   const act = b.dataset.act, id = b.dataset.id;
   if (act === "remove") picks = picks.filter(t => !sameId(t.id, id));
   else if (act === "core") {
@@ -943,8 +975,10 @@ document.addEventListener("click", e => {
     if (t.keeper) keeperCore = !isCore(t);
     else picks.find(x => sameId(x.id, id)).core = !isCore(t);
   } else if (act === "reset") {
-    if (!confirm("Clear your team? The keeper stays.")) return;
+    if (!confirm("Clear your team and the taken players? The keeper stays.")) return;
     picks = [];
+    keeperCore = null;
+    taken.clear();
   } else return;
   render();
 });
@@ -954,7 +988,7 @@ document.addEventListener("input", e => {
   const t = picks.find(x => sameId(x.id, e.target.dataset.id));
   if (!t) return;
   t.price = Math.max(0, Math.round(Number(e.target.value) || 0));
-  renderSummary(myTeam());
+  renderHead(myTeam());
   saveTeam();
 });
 document.addEventListener("change", e => { if (e.target.dataset.act === "price") render(); });

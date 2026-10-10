@@ -109,14 +109,25 @@ def test_fit_gives_the_change_in_started_games_finals_and_holes():
     days = [day(["BOS", "NY"], week="wk19", quality=True, date="2027-03-08"), day(["BOS"], quality=True)]
     result = engine(data(days, players), [1, 2, 4], fit=[3, 5])
     # NY plays on one quality day in wk19: +1 started game, 1 hole less, no finals game. LAL does not play.
-    assert result["fits"] == [{"started": 1, "finals": 0, "holes_removed": 1}, {"started": 0, "finals": 0, "holes_removed": 0}]
+    assert result["fits"] == [
+        {"started": 1, "finals": 0, "holes_removed": 1, "games": 1, "quality": 1, "quality_started": 1},
+        {"started": 0, "finals": 0, "holes_removed": 0, "games": 0, "quality": 0, "quality_started": 0}]
 
 
-def test_fit_of_a_player_who_sits_is_zero_and_fit_with_an_empty_core_is_his_games():
+def test_fit_of_a_player_who_sits_is_zero_of_his_games_and_fit_with_an_empty_core_is_his_games():
     players = [player(1, "BOS", "PG", 9), player(2, "BOS", "PG", 8), player(3, "BOS", "PG", 7)]
     days = [day(["BOS"], quality=True)]
-    assert engine(data(days, players), [1, 2], fit=[3])["fits"] == [{"started": 0, "finals": 0, "holes_removed": 0}]
-    assert engine(data(days, players), [], fit=[3])["fits"] == [{"started": 1, "finals": 1, "holes_removed": 1}]
+    assert engine(data(days, players), [1, 2], fit=[3])["fits"] == [
+        {"started": 0, "finals": 0, "holes_removed": 0, "games": 1, "quality": 1, "quality_started": 0}]
+    assert engine(data(days, players), [], fit=[3])["fits"] == [
+        {"started": 1, "finals": 1, "holes_removed": 1, "games": 1, "quality": 1, "quality_started": 1}]
+
+
+def test_fit_games_leave_out_rest_nights():
+    players = [player(1, "BOS", "C", 9), player(2, "NY", "PG", 5, rests_b2b=1)]
+    days = [day(["NY"], quality=True, b2b=["NY"]), day(["NY"], date="2027-03-23")]
+    fits = engine(data(days, players), [1], fit=[2])["fits"]
+    assert fits == [{"started": 1, "finals": 1, "holes_removed": 0, "games": 1, "quality": 0, "quality_started": 0}]
 
 
 def test_fit_for_500_players_takes_less_than_100_ms():
