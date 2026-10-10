@@ -38,7 +38,9 @@ core = 7
 playoff_weight = 1.0
 fit_limits = [0.5, 1.5]    # the lowest and the highest fit
 
-# Injury risk and back-to-back rest in the auction simulator. The data is data/projection_risk.csv.
+# Injury risk and back-to-back rest. The data is data/projection_risk.csv.
+# Rankings and draft board: a player with rests_b2b gets no second nights in the schedule columns and the S flag.
+# The board shows inj_risk. Neither changes the value. The settings below are for the auction simulator.
 [risk]
 file = "data/projection_risk.csv"
 # Chance that a player misses a whole playoff week, for each inj_risk tier. The projected games already hold
@@ -75,6 +77,7 @@ power = 1.25
 [playoffs]
 # The playoff schedule does not change the rankings. These settings make the schedule
 # columns in rankings.csv, playoff_schedule.csv and the draft board flags.
+# A player with rests_b2b ([risk] file) does not get the second night of a back-to-back in these columns.
 
 # Fantasy playoff weeks (Monday to Sunday).
 weeks = [

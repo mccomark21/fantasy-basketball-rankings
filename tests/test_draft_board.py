@@ -86,3 +86,27 @@ def test_group_panel_lists_the_top_groups_of_3_or_more_for_each_keeper():
     # Pairs are left out. The top group by low for each keeper.
     assert re.findall(r'data-players="([^"]*)"', html) == ["A|C|D|E", "B|C|D"]
     assert "80% ±7" in html and "30 auctions" in html
+
+
+def test_risk_column_shows_the_tier_and_sorts_a_missing_tier_last():
+    cfg = {"weights": {"pts": 1.0}, "board": {"low_games": 60},
+           "flags": {"good_quality_games": 3, "poor_quality_games": 1}}
+    cols = {h: fn for h, _, _, fn in draft_board.html_columns(cfg)}
+    assert list(cols)[list(cols).index("Games"):][:2] == ["Games", "Risk"]
+    assert cols["Risk"](pd.Series({"inj_risk": "low"})).endswith('>low</td>')
+    assert "var(--good)" in cols["Risk"](pd.Series({"inj_risk": "low"}))
+    assert 'data-v="3"' in cols["Risk"](pd.Series({"inj_risk": "extreme"}))
+    assert "var(--bad)" in cols["Risk"](pd.Series({"inj_risk": "extreme"}))
+    assert cols["Risk"](pd.Series({"inj_risk": float("nan")})) == '<td data-v="-1">—</td>'
+
+
+def test_s_flag_note_says_when_the_player_rests_on_back_to_backs(monkeypatch):
+    cfg = {"weights": {"pts": 1.0}, "board": {"low_games": 60},
+           "flags": {"good_playoff_games": 11, "poor_playoff_games": 9,
+                     "good_quality_games": 3, "poor_quality_games": 1}}
+    players = pd.DataFrame({
+        "name": ["A", "B"], "team": ["BOS", "BOS"], "games": [70, 70], "pts": [20.0, 10.0],
+        "playoff_games": [11, 8], "quality_games": [1, 1], "short_weeks": ["", ""], "rests_b2b": [0, 1],
+    })
+    monkeypatch.setattr(draft_board, "build_rankings", lambda c: players.copy())
+    assert draft_board.load(cfg).s_note.tolist() == ["11 playoff games", "8 playoff games (rests on back-to-backs)"]

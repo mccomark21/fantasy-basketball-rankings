@@ -3,6 +3,8 @@
 The board is one table of all players from build_rankings() in rankings.py, sorted by rank ([board] in config.toml).
 Each player gets an S flag (playoff games) and a Q flag (quality games): green = good, gray = average,
 yellow = poor. A short playoff week shows a red X in place of both flags ([flags] in config.toml).
+A player who rests on back-to-backs has fewer playoff games than his team (playoffs.join_teams()).
+The Risk column shows the injury risk tier. It does not change the value.
 The stat columns are the categories in [weights]. Positions are the Yahoo positions.
 """
 import json
@@ -18,6 +20,8 @@ TITLE = "Playoff Draft Board"
 # Column label for a category. A category that is not here uses its name in capitals.
 LABELS = {"threes": "3PM"}
 POINTS = {"good": 1, "avg": 0, "warn": -1}
+# Sort key for each injury risk tier. A player with no tier sorts last.
+RISK = {"low": 0, "med": 1, "high": 2, "extreme": 3}
 
 
 def categories(cfg):
@@ -42,7 +46,8 @@ def load(cfg):
     df["two_game"] = df.short_weeks != ""
     df["s_flag"] = [grade(g, f["good_playoff_games"], f["poor_playoff_games"]) for g in df.playoff_games]
     df["q_flag"] = [grade(q, f["good_quality_games"], f["poor_quality_games"]) for q in df.quality_games]
-    df["s_note"] = df.playoff_games.astype(str) + " playoff games"
+    rests = df.get("rests_b2b", pd.Series(0, index=df.index)).fillna(0).astype(bool)
+    df["s_note"] = df.playoff_games.astype(str) + " playoff games" + rests.map({True: " (rests on back-to-backs)", False: ""})
     df["q_note"] = df.quality_games.astype(str) + " quality games"
     df["x_note"] = df.short_weeks
     return df
@@ -80,6 +85,7 @@ def write_markdown(df, cfg):
         "Playoff games": lambda r: r.games_wk,
         "Quality games": lambda r: r.quality_wk,
         "Games": lambda r: r.games,
+        "Risk": lambda r: risk_text(r),
         "Stats": lambda r: r.stats,
     }
     head = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
@@ -96,6 +102,9 @@ def write_markdown(df, cfg):
         "- **League $:** expected price in this league's auction. $0 = not expected to be bought. — = no Yahoo data.",
         "- **Diff:** $ − League $. A positive number is a bargain for you.",
         f"- ⚠ = projected for fewer than {t['low_games']} games.",
+        "- **Risk:** injury risk tier from the projections page. — = no tier. The value already holds the average "
+        "cost of injuries. A high tier means a larger chance to miss a whole playoff week.",
+        "- A player who rests on back-to-backs misses the second night in the playoff columns, the S flag and Sched.",
     ]
     start = 1
     for end in [*t["tiers"], df["rank"].max()]:
@@ -127,6 +136,20 @@ def flags_cell(r):
         return flag_html("X", "bad wide", r.x_note), "-3.0"
     key = POINTS[r.s_flag] + POINTS[r.q_flag] + 0.1 * POINTS[r.q_flag]
     return flag_html("S", r.s_flag, r.s_note) + flag_html("Q", r.q_flag, r.q_note), f"{key:.1f}"
+
+
+def risk_text(r):
+    """Injury risk tier, or "—" for a player who is not in the risk file."""
+    tier = getattr(r, "inj_risk", None)
+    return tier if isinstance(tier, str) else "—"
+
+
+def risk_cell(r):
+    """Risk tier: green for low, red for high and extreme. A player with no tier sorts last."""
+    tier = risk_text(r)
+    if tier not in RISK:
+        return td("—", v="-1")
+    return td(tier, v=RISK[tier], style=shade(1 - RISK[tier], 2))
 
 
 def td(text, v=None, style=None, title=None, cls=None):
@@ -171,6 +194,7 @@ def html_columns(cfg, lift=False):
                                                     style=shade(r.quality_games - q_mid, q_scale),
                                                     title=f"{r.quality_games} quality games")),
         ("Games", True, False, lambda r: td(r.games, style=shade(r.games - t["low_games"], 15))),
+        ("Risk", True, True, risk_cell),
         *[(label, True, False, stat(cat)) for cat, label in categories(cfg)],
     ]
 
@@ -323,7 +347,8 @@ p .flag { margin-right: 6px; }
 <p>__FLAGS__</p>
 <p>Stats are per game, colored by z-score. Playoff games and quality games are shown for each week (__WEEKS__).
 Playoff games is colored by week value: 2-game weeks cost the most. Quality games is colored by the total.
-Pos: Yahoo positions (— = not in the Yahoo top 500). Sched: 1.00 = league average. $: auction dollars. League $: expected price in this league. Diff: $ − League $ (green = bargain). Games is red below __LOW__. ⚠ = fewer than __LOW__ games.
+Pos: Yahoo positions (— = not in the Yahoo top 500). Sched: 1.00 = league average. A player who rests on back-to-backs misses the second nights in the playoff columns, the S flag and Sched. $: auction dollars. League $: expected price in this league. Diff: $ − League $ (green = bargain). Games is red below __LOW__. ⚠ = fewer than __LOW__ games.
+Risk: injury risk tier (— = no tier). The value already holds the average cost of injuries. A high tier means a larger chance to miss a whole playoff week.
 Point to a flag to see the reason. Click a column header to sort.
 Pick one or more positions to show players who can play any of them.
 Pick one or more S or Q colors to show players with those flags. A player with an X or no team has no S or Q flags.</p>

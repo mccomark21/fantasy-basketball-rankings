@@ -82,3 +82,18 @@ def test_player_with_no_team_gets_an_empty_schedule(result):
     none = out.loc[1]
     assert (none.wk1, none.quality_games, none.sched_rank, none.sched_score, none.week_score) == (0, 0, 0, 0, 0)
     assert (none.games_wk, none.short_weeks) == ("0", "")
+
+
+def test_player_who_rests_on_back_to_backs_loses_the_second_nights(result):
+    # A plays 4 games in wk1. 3 are second nights (Mar 1, 2 and 3), and 2 of them are quality days (Mar 2 and 3).
+    teams, _ = result
+    players = pd.DataFrame({"name": ["plays", "rests"], "team": ["A", "A"], "rests_b2b": [0, 1]})
+    out = join_teams(players, teams, CFG).set_index("name")
+    assert (out.at["plays", "wk1"], out.at["plays", "quality_games"]) == (4, 3)
+    rests = out.loc["rests"]
+    assert (rests.wk1, rests.playoff_games, rests.quality_games, rests.games_wk) == (1, 1, 1, "1")
+    assert rests.short_weeks == "1-game wk1"
+    assert rests.q_season == 4  # the full season does not change
+    # 1 game is 1/3 of a 3-game week (linear). With the bonus: 1/3 + 0.1. League average of the teams: 1.175.
+    assert rests.sched_score == pytest.approx((1 / 3 + 0.1) / 1.175)
+    assert rests.sched_rank == 5  # below all 4 team schedules
