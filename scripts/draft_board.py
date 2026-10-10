@@ -252,7 +252,9 @@ def html_table(df, cfg):
     # Text alignment comes from the column list, so a new column does not need new CSS
     left = [i + 1 for i, (_, _, is_left, _) in enumerate(cols) if is_left]
     style = ", ".join(f".wrap th:nth-child({i}), .wrap td:nth-child({i})" for i in left) + " { text-align: left; }"
-    ths = "".join(f'<th data-num="{int(num)}">{h}</th>' for h, num, _, _ in cols)
+    # The Player column stays in view when the table scrolls to the right
+    sticky = {"Player": ' class="name"'}
+    ths = "".join(f'<th data-num="{int(num)}"{sticky.get(h, "")}>{h}</th>' for h, num, _, _ in cols)
     rows = [row_open(r) + "".join(fn(r) for *_, fn in cols) + "</tr>" for r in df.itertuples()]
     return (f"<style>{style}</style>\n"
             f'<div class="wrap"><table>\n<thead><tr>{ths}</tr></thead>\n<tbody>\n'
@@ -531,6 +533,12 @@ th { position: sticky; top: 0; background: var(--head); cursor: pointer; user-se
 th:hover { color: var(--q); }
 th.asc::after { content: " ▲"; } th.desc::after { content: " ▼"; }
 td.name { font-weight: 600; }
+/* Board table: the Player column stays at the left edge when the table scrolls. A row under the pointer is lit. */
+.wrap td.name, .wrap th.name { position: sticky; left: 0; background: var(--bg); box-shadow: inset -1px 0 var(--line); }
+.wrap th.name { z-index: 2; background: var(--head); }
+.wrap tbody tr.mine td.name { background: color-mix(in srgb, var(--q) 12%, var(--bg)); }
+.wrap tbody tr:hover td { box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--q) 16%, transparent); }
+.wrap tbody tr:hover td.name { background: color-mix(in srgb, var(--q) 16%, var(--bg)); box-shadow: inset -1px 0 var(--line); }
 tr:last-child td { border-bottom: 0; }
 .flag { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
         margin-right: 3px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700;
