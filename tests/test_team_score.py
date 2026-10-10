@@ -181,3 +181,54 @@ def test_draw_gives_the_rest_days_of_a_rester():
     assert p.score([out]) == pytest.approx(20)
     # week_totals also skips the rest day
     assert p.week_totals([{**out, "stats": [1.0, 1.0]}]).loc["wk1"].tolist() == pytest.approx([2, 2])
+
+
+def core(name, team, value, pos="PG", **more):
+    """A core player for game_counts(). more: rests_b2b."""
+    return {"name": name, "team": team, "value": value, "pos": pos, **more}
+
+
+def test_game_counts_starts_two_guards_and_a_center():
+    # PG, Util and C: all 3 start, and the busy day has no holes
+    counts = playoffs(days(["BOS"])).game_counts([core("A", "BOS", 9), core("B", "BOS", 5), core("C", "BOS", 7, "C")])
+    assert counts["weeks"]["wk1"] == {"started": 3, "lost": 0, "lost_by": {}, "holes": 0}
+
+
+def test_game_counts_sits_the_guard_with_the_lowest_value():
+    # PG and Util hold 2 guards. The third guard has no slot.
+    guards = [core("A", "BOS", 9), core("Low", "BOS", 2), core("B", "BOS", 5)]
+    counts = playoffs(days(["BOS"], ["BOS"])).game_counts(guards)
+    assert counts["weeks"]["wk1"] == {"started": 4, "lost": 2, "lost_by": {"Low": 2}, "holes": 0}
+
+
+def test_game_counts_places_a_guard_with_two_positions_at_sg():
+    # PG and Util are full. The PG/SG player starts at SG. A PG with the same value sits.
+    guards = [core("A", "BOS", 9), core("B", "BOS", 8)]
+    assert playoffs(days(["BOS"])).game_counts(guards + [core("C", "BOS", 1, "PG/SG")])["total"]["started"] == 3
+    assert playoffs(days(["BOS"])).game_counts(guards + [core("C", "BOS", 1, ["PG", "SG"])])["total"]["started"] == 3
+    assert playoffs(days(["BOS"])).game_counts(guards + [core("C", "BOS", 1)])["total"]["started"] == 2
+
+
+def test_game_counts_skip_a_rester_on_a_second_night():
+    # Day 2 is the second night of a back-to-back. The rester does not play: no started and no lost game.
+    schedule = days(["BOS"], ["BOS"], b2b=[[], ["BOS"]])
+    guards = [core("A", "BOS", 9), core("B", "BOS", 8), core("Rester", "BOS", 1, rests_b2b=1)]
+    counts = playoffs(schedule).game_counts(guards)["weeks"]["wk1"]
+    assert counts == {"started": 4, "lost": 1, "lost_by": {"Rester": 1}, "holes": 0}  # he sits on day 1 only
+    assert playoffs(schedule).game_counts([core("Rester", "BOS", 9, rests_b2b=1)])["total"]["started"] == 1
+
+
+def test_game_counts_count_holes_on_quality_days_only():
+    four = [core(pos, "BOS", 5, pos) for pos in ["PG", "SG", "SF", "PF"]]
+    assert playoffs(days(["BOS"], quality=True)).game_counts(four)["total"] == {"started": 4, "lost": 0, "holes": 2}
+    assert playoffs(days(["BOS"])).game_counts(four)["total"] == {"started": 4, "lost": 0, "holes": 0}
+
+
+def test_game_counts_finals_are_the_last_week():
+    # wk21 day 1 is a quality day: 2 guards start, 1 sits, 4 holes. On day 2 no core player plays: 6 holes.
+    schedule = pd.concat([days(["BOS"], ["BOS"], week="wk20"), days(["BOS"], ["NY"], week="wk21", quality=True)])
+    guards = [core("A", "BOS", 9), core("B", "BOS", 8), core("Low", "BOS", 1)]
+    counts = playoffs(schedule).game_counts(guards)
+    assert counts["weeks"]["wk21"] == {"started": 2, "lost": 1, "lost_by": {"Low": 1}, "holes": 10}
+    assert counts["finals"] == {"started": 2, "lost": 1, "holes": 10}
+    assert counts["total"] == {"started": 6, "lost": 3, "holes": 10}
