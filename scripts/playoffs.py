@@ -2,6 +2,7 @@
 
 The playoff-week rules are here: the week value table, quality (low-volume) days, short weeks and the score.
 The settings are [playoffs], [quality_games] and avoid_week_games in [flags]. The callers write the files.
+A player who rests on back-to-backs (rests_b2b) gets the schedule of his team without the second nights.
 """
 import pandas as pd
 
@@ -18,6 +19,16 @@ def read_schedule():
 def _q_cols(cfg):
     """Quality-game column for each playoff week, for example "q_wk19"."""
     return ["q_" + w for w in weeks(cfg)]
+
+
+def _b2b_cols(cfg):
+    """Games and quality games on the second night of a back-to-back for each playoff week, for example "b2b_q_wk19"."""
+    return ["b2b_" + c for c in [*weeks(cfg), *_q_cols(cfg)]]
+
+
+def _count_cols(cfg):
+    """The game counts that _summarize() makes the other columns from."""
+    return ["q_season", *weeks(cfg), *_q_cols(cfg), *_b2b_cols(cfg)]
 
 
 def _week_value(games, cfg):
@@ -51,6 +62,7 @@ def playoff_schedule(sched, cfg):
 
     teams: one row for each team, with these columns:
     - games and quality games for each playoff week, and their totals playoff_games and quality_games
+    - b2b_wk19, b2b_q_wk19, ...: games and quality games on the second night of a back-to-back in each week
     - q_season: quality games in the full season
     - games_wk and quality_wk: the counts for each week, for example "4-3-4"
     - finals_quality: quality games in the last playoff week
@@ -71,6 +83,8 @@ def playoff_schedule(sched, cfg):
         in_week = sched[(sched.date >= pd.Timestamp(week["start"])) & (sched.date <= pd.Timestamp(week["end"]))]
         counts[name] = in_week.groupby("team").size()
         counts[q_name] = in_week.groupby("team").quality.sum()
+        counts["b2b_" + name] = in_week.groupby("team").b2b.sum()
+        counts["b2b_" + q_name] = in_week[in_week.b2b].groupby("team").quality.sum()
         days += [{"date": date, "week": name, "nba_games": day_games[date], "quality": games.quality.iloc[0],
                   "teams": games.team.tolist(), "b2b": games.team[games.b2b].tolist()}
                   for date, games in in_week.groupby("date")]
@@ -78,20 +92,43 @@ def playoff_schedule(sched, cfg):
 
     # Schedule score: average playoff week value with the quality bonus, divided by the league average.
     # 1.00 = an average playoff schedule. The score is for information only. It does not change the value.
-    week_names, bonus = weeks(cfg), cfg["quality_games"]["bonus"]
-    raw = teams.week_score + bonus * teams.quality_games / len(week_names)
+    raw = _raw_score(teams, cfg)
     teams["sched_score"] = raw / raw.mean()
     teams["sched_rank"] = teams.sched_score.rank(ascending=False, method="min").astype(int)
     return teams, pd.DataFrame(days)
 
 
+def _raw_score(teams, cfg):
+    """Average playoff week value with the quality bonus."""
+    return teams.week_score + cfg["quality_games"]["bonus"] * teams.quality_games / len(weeks(cfg))
+
+
+def _rested(teams, cfg):
+    """The team table for a player who misses the second night of each back-to-back in the playoff weeks.
+
+    The score and the rank compare his schedule with the full schedules of the teams.
+    """
+    counts = teams[_count_cols(cfg)].copy()
+    for col in [*weeks(cfg), *_q_cols(cfg)]:
+        counts[col] -= teams["b2b_" + col]
+    out = _summarize(counts, cfg)
+    out["sched_score"] = _raw_score(out, cfg) / _raw_score(teams, cfg).mean()
+    out["sched_rank"] = [1 + int((teams.sched_score > s).sum()) for s in out.sched_score]
+    return out
+
+
 def join_teams(players, teams, cfg):
-    """Add the team schedule to each player. A player with no team gets 0 games, score 0, rank 0 and no short weeks."""
-    count_cols = ["q_season", *weeks(cfg), *_q_cols(cfg)]
-    empty = _summarize(pd.DataFrame(0, index=[NO_TEAM], columns=count_cols), cfg)
+    """Add the team schedule to each player. A player with no team gets 0 games, score 0, rank 0 and no short weeks.
+
+    A player with rests_b2b = 1 does not play on the second night of a back-to-back in the playoff weeks. His games,
+    quality games, week strings, short weeks and score count only the games that he plays. q_season does not change.
+    """
+    empty = _summarize(pd.DataFrame(0, index=[NO_TEAM], columns=_count_cols(cfg)), cfg)
     empty = empty.assign(sched_score=0.0, sched_rank=0, short_weeks="")
     key = players.team.where(players.team.isin(teams.index), NO_TEAM)
-    return players.join(pd.concat([teams, empty]).loc[key].set_index(players.index))
+    rests = players.get("rests_b2b", pd.Series(0, index=players.index)).fillna(0).astype(bool)
+    table = pd.concat({False: pd.concat([teams, empty]), True: pd.concat([_rested(teams, cfg), empty])})
+    return players.join(table.loc[list(zip(rests, key))].set_index(players.index))
 
 
 def schedule_grid(teams, days):

@@ -35,7 +35,7 @@ Public rankings value all 9 categories. This league's strategy punts 3 of them, 
 
 ### Playoff schedule
 
-The scripts count the games that each player's NBA team plays in the fantasy playoff weeks. This data does not change the rankings. The draft board shows it as flags, so you can use it to choose between two players with close values.
+The scripts count the games that each player's NBA team plays in the fantasy playoff weeks. This data does not change the rankings. The draft board shows it as flags, so you can use it to choose between two players with close values. A player who rests on back-to-backs (`rests_b2b`) does not get the second night of a back-to-back in these counts.
 
 ## Pipeline
 
@@ -130,7 +130,7 @@ All settings are in [`config.toml`](config.toml). To apply a change, run the scr
 | `[board]` | The low-games mark and the tiers in the Markdown board. |
 | `[flags]` | The limits that make a draft board flag green, gray, yellow or a red X. |
 | `[simulation]` | The auction simulator: the number of runs, the bid noise, the seed, your keeper candidates, your core size and the playoff fit. See [Auction simulator](#auction-simulator). |
-| `[risk]` | Injury risk and back-to-back rest in the simulator: the chance of a missed playoff week for each tier and the chance of a rest day. See [Injuries and rest days](#injuries-and-rest-days). |
+| `[risk]` | Injury risk and back-to-back rest. The file for the rankings and the draft board, and for the simulator: the chance of a missed playoff week for each tier and the chance of a rest day. See [Injuries and rest days](#injuries-and-rest-days). |
 
 ## Project structure
 
@@ -248,6 +248,8 @@ The simulator writes the `simulation_*.csv` files to `output/`. Run `draft_board
 
 The simulator adds the risk that the value does not show. The settings are in `[risk]`.
 
+The rankings and the draft board use the same file. The schedule columns and the S flag do not count the second nights for a player with `rests_b2b`. The board shows `inj_risk` in the Risk column. Neither changes `value`.
+
 - Back-to-back rest: a player with `rests_b2b` sits on the second night of a back-to-back with the chance `rest_chance` (1.0). The playoff weeks have 19 of these nights, so he misses games that his team plays. The rest days lower his playoff fit, so your bot bids less for him.
 - Injuries: in each simulated auction, each player misses each playoff week with the chance of his `inj_risk` tier (`missed_week`). The projected games already hold the average cost of injuries, so the simulator raises his production on the days that he plays by 1 / (1 − chance). His expected production stays the same. The draw changes the spread only: a core of high-risk players loses a whole week more often, and the face-offs show it in the title percent.
 - The first tier chances come from the games in `data/Projections.csv`: the share of the season that each tier misses. A player who is not in `data/projection_risk.csv` gets `missing_tier` (med).
@@ -290,13 +292,13 @@ If your core players play on low-volume days, you can use your adds (5 each week
 | `rank` | Final rank. |
 | `pg_rank` | Rank by per-game value only. |
 | `pos` | Yahoo positions, for example `PG/SG`. `—` means the player is not in the Yahoo data. |
-| `wk19`, `wk20`, `wk21` | Games in each playoff week. |
+| `wk19`, `wk20`, `wk21` | Games in each playoff week. A player who rests on back-to-backs does not get the second nights. |
 | `playoff_games` | Total games in the playoff weeks. |
 | `q_wk19`, `q_wk20`, `q_wk21` | Quality games in each playoff week. |
 | `quality_games` | Total quality games in the playoff weeks. |
 | `q_season` | Quality games in the full season. |
-| `sched_score` | The playoff schedule score of the player's team. |
-| `sched_rank` | The rank of that schedule score, from 1 to 30. |
+| `sched_score` | The playoff schedule score of the player's team. For a player who rests on back-to-backs, the score of the games that he plays. |
+| `sched_rank` | The rank of that schedule score among the 30 teams. A player who rests on back-to-backs can get 31: his score is below all team scores. |
 | `pg_value` | Per-game value. |
 | `value` | Final value. |
 | `dollars` | Auction dollars. The dollars of all players add up to 14 × $200. |
