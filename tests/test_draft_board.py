@@ -202,7 +202,7 @@ def test_page_has_one_team_data_block_with_the_contract_keys(monkeypatch, tmp_pa
     assert data["days"] == [{"date": "2027-03-08", "week": "wk19", "nba_games": 5, "quality": True,
                              "teams": ["BOS", "DEN"], "b2b": ["DEN"]}]
     assert data["players"][0] == {"id": 3930, "name": "A", "team": "DEN", "pos": ["C"], "rank": 1, "value": 9.4612,
-                                  "rests_b2b": 0, "league_price": 12}
+                                  "rests_b2b": 0, "league_price": 12, "dollars": 10.0}
     # A player with no team and no League $
     assert data["players"][1]["team"] is None and data["players"][1]["league_price"] is None
 

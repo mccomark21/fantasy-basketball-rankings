@@ -194,6 +194,8 @@ def html_columns(cfg, lift=False):
         ("Flags", True, True, lambda r: td(*flags_cell(r))),
         # The page fills the Fit cells from your team. Δ finals breaks ties.
         ("Fit", True, False, lambda r: td("", v="-999", cls="fit")),
+        # Fit $ = $ x the started games that the player adds / the games of an average core player
+        ("Fit $", True, False, lambda r: td("", v="-999", cls="fitd")),
         ("Team", False, True, lambda r: td(r.team)),
         ("Pos", False, True, lambda r: td(r.pos)),
         ("Value", True, False, lambda r: td(f"{r.value:.2f}")),
@@ -437,7 +439,8 @@ def team_data(df, days, cfg):
     players = [{"id": int(r.player_id), "name": r.name, "team": None if getattr(r, "no_team", False) else r.team,
                 "pos": positions(r.pos, slots), "rank": int(r.rank), "value": round(float(r.value), 4),
                 "rests_b2b": int(rest),
-                "league_price": None if pd.isna(r.league_price) else int(round(r.league_price))}
+                "league_price": None if pd.isna(r.league_price) else int(round(r.league_price)),
+                "dollars": round(float(r.dollars), 2)}
                for r, rest in zip(df.itertuples(), rests)]
     day_list = [] if days is None else [
         {"date": f"{d.date:%Y-%m-%d}", "week": d.week, "nba_games": int(d.nba_games), "quality": bool(d.quality),
@@ -664,7 +667,9 @@ size in which each player has the most games of the week (at most 6 starters a d
 <p>Fit: the games that the player adds to your started games / his playoff games, then the same for quality games.
 Green = 90% or more, yellow = 70% to 89%, red = less than 70%. A low share means a logjam: he sits, or he pushes out
 one of your players. ⚑ = he fills at least one hole. The Fit buttons in the filter bar show the players with a
-Fit color (the games part) or with ⚑. Click the Fit header to sort by the started games that a player adds. The page keeps your team in this browser.</p>
+Fit color (the games part) or with ⚑. Click the Fit header to sort by the started games that a player adds.
+Fit $ = $ × the started games that he adds / the playoff games of an average top-75 player. Green = his schedule
+makes him worth more than his $ to your team, red = less. Sort by Fit $ to balance value and schedule. The page keeps your team in this browser.</p>
 <p>Point to a flag to see the reason. Click a column header to sort.
 Pick one or more positions to show players who can play any of them.
 Pick one or more S or Q colors to show players with those flags. A player with an X or no team has no S or Q flags.</p>
@@ -895,7 +900,12 @@ function weekGames(p, quality) {
 }
 
 const boardRows = allRows.map(tr => ({tr, add: tr.querySelector("button.add"), take: tr.querySelector("button.take"),
-                                      fit: tr.querySelector("td.fit")}));
+                                      fit: tr.querySelector("td.fit"), fitd: tr.querySelector("td.fitd")}));
+// The playoff games of an average core-quality player (rank <= core_max_rank), for Fit $
+const coreGames = (() => {
+  const top = data.players.filter(p => p.rank <= data.core_max_rank && p.team);
+  return top.length ? top.reduce((n, p) => n + dayInfo.filter(d => plays(p, d)).length, 0) / top.length : 1;
+})();
 const boardHeads = [...document.querySelectorAll("#board .wrap thead th")];
 const fitHead = boardHeads.find(th => th.textContent === "Fit");
 // The Flags cell of a player in the team table: a copy of his board cell
@@ -1074,7 +1084,7 @@ function share(got, all) {
 // The + and × buttons and the Fit column
 function renderBoard(rows, core) {
   const mine = new Set(rows.map(t => String(t.id))), full = rows.length >= data.spots;
-  boardRows.forEach(({tr, add, take, fit}) => {
+  boardRows.forEach(({tr, add, take, fit, fitd}) => {
     const id = add.dataset.id, on = mine.has(id), gone = taken.has(id), p = byId.get(id);
     tr.classList.toggle("mine", on);
     tr.classList.toggle("taken", gone);
@@ -1085,6 +1095,10 @@ function renderBoard(rows, core) {
     take.title = on ? "On your team" : gone ? "Not taken (undo)" : "Taken by another team";
     if (!rows.length || on || !p) {
       tr.dataset.fit = tr.dataset.hole = "";
+      fitd.textContent = "";
+      fitd.dataset.v = -999;
+      fitd.removeAttribute("style");
+      fitd.removeAttribute("title");
       fit.replaceChildren();
       fit.dataset.v = -999;
       fit.removeAttribute("title");
@@ -1096,6 +1110,12 @@ function renderBoard(rows, core) {
     fit.dataset.v = d.started + d.quality_started / 100;
     tr.dataset.fit = d.games ? pctClass(d.started / d.games).slice(2) : "";
     tr.dataset.hole = d.holes_removed > 0 ? "1" : "";
+    // Fit $: green when the schedule gives more than his $, red when it gives less
+    const fd = p.dollars * d.started / coreGames, gain = fd - p.dollars;
+    fitd.textContent = `$${Math.round(fd)}`;
+    fitd.dataset.v = fd.toFixed(2);
+    fitd.title = `$${Math.round(p.dollars)} × ${d.started} added games / ${coreGames.toFixed(1)} games of an average core player`;
+    fitd.style.background = `color-mix(in srgb, var(${gain >= 0 ? "--good" : "--bad"}) ${Math.min(Math.abs(gain) / 8, 1) * 55}%, transparent)`;
     fit.title = `Adds ${d.started} of his ${d.games} playoff games and ${d.quality_started} of his ${d.quality} quality games`
       + ` (${d.finals} in the finals). ${d.holes_removed} holes filled.`;
   });
