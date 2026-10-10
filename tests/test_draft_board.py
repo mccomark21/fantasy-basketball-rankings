@@ -72,20 +72,81 @@ def test_league_price_and_diff_come_after_dollars_and_sort_a_missing_price_last(
     assert cols["League $"](unknown) == cols["Diff"](unknown) == '<td data-v="-999">—</td>'
 
 
-def test_group_panel_lists_the_top_groups_of_3_or_more_for_each_keeper():
-    groups = pd.DataFrame([
-        # keeper, group, size, runs, title_pct, se, low (sorted by low, as simulation_groups.csv is)
-        ("Flagg", "A + B", 2, 300, 70.0, 2.0, 66.0),
-        ("Flagg", "A + C + D + E", 4, 30, 80.0, 7.0, 66.0),
-        ("Flagg", "A + B + C", 3, 70, 74.0, 5.0, 64.0),
-        ("Buzelis", "B + C + D", 3, 50, 60.0, 6.0, 48.0),
-    ], columns=["keeper", "group", "size", "runs", "title_pct", "se", "low"])
-    html = draft_board.group_panel(groups, top=1)
+GROUPS = pd.DataFrame([
+    # keeper, group, size, runs, title_pct, se, low (sorted by low, as simulation_groups.csv is)
+    ("Flagg", "A + B", 2, 300, 70.0, 2.0, 66.0),
+    ("Flagg", "A + C + D + E", 4, 30, 80.0, 7.0, 66.0),
+    ("Flagg", "A + B + C", 3, 70, 74.0, 5.0, 64.0),
+    ("Buzelis", "B + C + D", 3, 50, 60.0, 6.0, 48.0),
+], columns=["keeper", "group", "size", "runs", "title_pct", "se", "low"])
 
-    assert re.findall(r'<option value="([^"]*)"', html) == ["Flagg", "Buzelis"]  # the order of the file
-    # Pairs are left out. The top group by low for each keeper.
-    assert re.findall(r'data-players="([^"]*)"', html) == ["A|C|D|E", "B|C|D"]
-    assert "80% ±7" in html and "30 auctions" in html
+
+def test_top_combos_keep_the_top_of_each_size_in_the_file_order():
+    combos = draft_board.top_combos(GROUPS, top=1)
+    assert list(zip(combos.keeper, combos.group)) == [
+        ("Flagg", "A + B"), ("Flagg", "A + C + D + E"), ("Flagg", "A + B + C"), ("Buzelis", "B + C + D")]
+
+
+def test_combo_stats_give_the_edge_and_the_median_price_of_runs_with_all_combo_players():
+    runs = pd.DataFrame([
+        # keeper, run, player, price, core
+        ("Flagg", 0, "A", 10.0, True), ("Flagg", 0, "B", 5.0, True), ("Flagg", 0, "C", 3.0, True),
+        ("Flagg", 1, "A", 20.0, True), ("Flagg", 1, "B", 7.0, True), ("Flagg", 1, "C", 1.0, True),
+        ("Flagg", 2, "A", 30.0, True), ("Flagg", 2, "B", 9.0, False), ("Flagg", 2, "C", 1.0, True),  # B not core
+        ("Flagg", 3, "A", 40.0, True), ("Flagg", 3, "C", 1.0, True),  # B not bought
+    ], columns=["keeper", "run", "player", "price", "core"])
+    summary = pd.DataFrame({"title_pct": [30.0]}, index=pd.Index(["Flagg"], name="keeper"))
+    combos = pd.DataFrame({"keeper": ["Flagg", "Buzelis"], "group": ["A + B + C", "B + C + D"],
+                           "title_pct": [74.0, 60.0]})
+    out = draft_board.combo_stats(combos, runs, summary)
+    assert out.price[0] == 23.0  # the median of 18 (run 0) and 28 (run 1)
+    assert out.edge[0] == 44.0
+    assert out.price.isna()[1] and out.edge.isna()[1]  # no runs and no summary for this keeper
+
+
+CFG = {"playoffs": {"weeks": [{"name": "wk19"}, {"name": "wk20"}, {"name": "wk21"}]},
+       "flags": {"good_playoff_games": 11, "poor_playoff_games": 9, "good_quality_games": 3,
+                 "poor_quality_games": 1, "avoid_week_games": 2}}
+
+
+def test_combo_cells_give_the_positions_prices_and_games_of_the_combo():
+    df = pd.DataFrame({"name": ["A", "B"], "pos": ["PG/SG", "SG/SF"], "dollars": [30.4, 10.0],
+                       "league_price": [25.0, float("nan")],
+                       "wk19": [4, 2], "wk20": [4, 4], "wk21": [4, 3], "q_wk19": [1, 0], "q_wk20": [2, 1], "q_wk21": [1, 1]})
+    pos, dollars, league, games, quality = draft_board.combo_cells(["A", "B", "Not in df"], df, CFG)
+    assert re.findall(r'class="pill on">(\w+)<', pos) == ["PG", "SG", "SF"]
+    assert dollars.endswith(">$40</td>")
+    assert league.endswith(">$25</td>")  # a missing League $ adds nothing
+    assert ">6-8-7 <b>21</b></td>" in games and 'data-v="21"' in games
+    assert ">1-3-2 <b>6</b></td>" in quality
+    # 10.5 playoff games and 3 quality games for each player: gray S, green Q
+    assert 'class="g-avg"' in games and 'class="g-good"' in quality
+
+
+def test_board_has_tabs_only_when_the_simulator_has_run(monkeypatch, tmp_path):
+    monkeypatch.setattr(draft_board, "OUT", tmp_path)
+    cfg = {**CFG, "weights": {"pts": 1.0}, "board": {"low_games": 60}}
+    monkeypatch.setattr(draft_board, "html_table", lambda df, cfg: "")
+    monkeypatch.setattr(draft_board, "filter_bar", lambda df: "")
+    df = pd.DataFrame({"name": ["A"], "pos": ["C"], "dollars": [10.0], "league_price": [12.0],
+                       "wk19": [4], "wk20": [4], "wk21": [4], "q_wk19": [1], "q_wk20": [1], "q_wk21": [1]})
+
+    draft_board.write_html(df, cfg)
+    html = (tmp_path / "draft_board.html").read_text(encoding="utf-8")
+    assert 'data-tab=' not in html and 'id="keeper"' not in html
+
+    combos = draft_board.top_combos(GROUPS).assign(base=30.0, edge=10.0, price=50.0)
+    summary = pd.DataFrame({"cost": [56.0, 16.0], "title_pct": [30.0, 25.0], "playoffs_pct": [99.0, 98.0],
+                            "rr_win_pct": [60.0, 58.0]}, index=pd.Index(["Flagg", "Buzelis"], name="keeper"))
+    draft_board.write_html(df, cfg, (combos, summary))
+    html = (tmp_path / "draft_board.html").read_text(encoding="utf-8")
+    assert re.findall(r'data-tab="(\w+)"', html) == ["board", "combos"]
+    assert re.findall(r'<option value="([^"]*)"', html) == ["Flagg", "Buzelis"]
+    assert "Keeper cost $56" in html and ">+10</td>" in html and ">$50</td>" in html
+    # The size filter shows the combos of 3 and 4 when the page opens
+    assert re.findall(r'data-size="(\d)" aria-pressed="(\w+)"', html) == [("2", "false"), ("3", "true"), ("4", "true")]
+    assert re.findall(r'<tr data-size="(\d)"( hidden)?>', html) == [("2", " hidden"), ("4", ""), ("3", ""), ("3", "")]
+    assert "<details" in html and "Strong groups" not in html
 
 
 def test_risk_column_shows_the_tier_and_sorts_a_missing_tier_last():

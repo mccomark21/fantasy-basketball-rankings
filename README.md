@@ -233,7 +233,7 @@ For each keeper, the output shows your title percent, your face-off results, you
 
 The auctions run in parallel, one process for each CPU core. Each keeper gets the same random seeds, so the comparison between keepers is fair. 2,000 auctions for each keeper take about 5 minutes on 16 cores.
 
-The simulator writes the `simulation_*.csv` files to `output/`. Run `draft_board.py` after it: the board then shows a **Strong groups** panel (the groups of 3 or 4 with the best low end, for the keeper that you pick) and a **Lift** column. Click a group to show only its players.
+The simulator writes the `simulation_*.csv` files to `output/`. Run `draft_board.py` after it: the board then shows a **Core combos** tab and a **Lift** column. The tab shows the combos of 3 or 4 with the best low end, for the keeper that you pick, with the playoff games and quality games of each combo. Click a combo to show only its players on the board.
 
 ### Playoff score
 
