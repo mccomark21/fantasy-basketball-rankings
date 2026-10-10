@@ -276,6 +276,14 @@ def filter_bar(df):
             f'<span class="pos" role="group" aria-label="Positions">{pos}</span>'
             f'<select id="team" aria-label="Team">{opts}</select>{flags}'
             '<span id="combo" hidden><span></span><button type="button" aria-label="Clear the combo">Clear</button></span>'
+            '<span class="fits" role="group" aria-label="Fit">'
+            '<button type="button" data-fit="good" aria-pressed="false" title="Fit: 90% or more of his games add to your starts">'
+            '<span class="fit-key g-good">≥90%</span></button>'
+            '<button type="button" data-fit="warn" aria-pressed="false" title="Fit: 70% to 89%">'
+            '<span class="fit-key g-warn">70–89%</span></button>'
+            '<button type="button" data-fit="bad" aria-pressed="false" title="Fit: less than 70%">'
+            '<span class="fit-key g-bad">&lt;70%</span></button>'
+            '<button type="button" data-fit="hole" aria-pressed="false" title="Fills a hole">⚑</button></span>'
             '<button type="button" id="show-taken" aria-pressed="false" title="Show the players that you marked taken">'
             'Show taken</button><span id="count"></span></div>')
 
@@ -532,7 +540,9 @@ p .flag { margin-right: 6px; }
 .filters input, .filters select, .filters button { font: inherit; color: var(--fg); background: var(--bg);
         border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
 .filters input { width: 200px; }
-.filters .pos, .filters .flags { display: inline-flex; gap: 4px; }
+.filters .pos, .filters .flags, .filters .fits { display: inline-flex; gap: 4px; }
+.filters .fits button { padding: 0 4px; }
+.filters .fits .fit-key { margin: 0; }
 .filters .flags { align-self: stretch; }
 .filters .flags button { min-width: 0; padding: 0 4px; display: inline-flex; align-items: center; }
 .filters .flags .flag { margin: 0; }
@@ -653,7 +663,8 @@ Used = started / games: 100% means that no game sits in a logjam. vs ideal = sta
 size in which each player has the most games of the week (at most 6 starters a day). Green = 90% or more.</p>
 <p>Fit: the games that the player adds to your started games / his playoff games, then the same for quality games.
 Green = 90% or more, yellow = 70% to 89%, red = less than 70%. A low share means a logjam: he sits, or he pushes out
-one of your players. ⚑ = he fills at least one hole. The page keeps your team in this browser.</p>
+one of your players. ⚑ = he fills at least one hole. The Fit buttons in the filter bar show the players with a
+Fit color (the games part) or with ⚑. Click the Fit header to sort by the started games that a player adds. The page keeps your team in this browser.</p>
 <p>Point to a flag to see the reason. Click a column header to sort.
 Pick one or more positions to show players who can play any of them.
 Pick one or more S or Q colors to show players with those flags. A player with an X or no team has no S or Q flags.</p>
@@ -712,6 +723,7 @@ const posButtons = [...document.querySelectorAll(".filters .pos button")];
 const flagButtons = [...document.querySelectorAll(".filters .flags button")];
 const pressed = bs => bs.filter(b => b.getAttribute("aria-pressed") === "true");
 const showTaken = document.getElementById("show-taken");
+const fitButtons = [...document.querySelectorAll(".filters .fits button")];
 const allRows = [...document.querySelectorAll("#board .wrap tbody tr")];
 allRows.forEach(tr => tr.dataset.name = fold(tr.querySelector(".name").textContent));
 function applyFilters() {
@@ -721,6 +733,9 @@ function applyFilters() {
   const grades = Object.fromEntries(["s", "q"].map(f =>
     [f, pressed(flagButtons).filter(b => b.dataset.flag === f).map(b => b.dataset.grade)]));
   const flagOk = tr => Object.entries(grades).every(([f, g]) => !g.length || g.includes(tr.dataset[f]));
+  // Fit: the row grade must be one of the picked colors. With ⚑ on, the player must fill a hole.
+  const fits = pressed(fitButtons).map(b => b.dataset.fit), colors = fits.filter(f => f !== "hole");
+  const fitOk = tr => (!colors.length || colors.includes(tr.dataset.fit)) && (!fits.includes("hole") || tr.dataset.hole === "1");
   let shown = 0;
   allRows.forEach(tr => {
     const ok = tr.dataset.name.includes(q)
@@ -728,14 +743,15 @@ function applyFilters() {
       && (!team.value || tr.dataset.team === team.value)
       && (!picked.length || tr.dataset.pos.split("/").some(p => picked.includes(p)))
       && flagOk(tr)
-      && (showTaken.getAttribute("aria-pressed") === "true" || !tr.classList.contains("taken"));
+      && (showTaken.getAttribute("aria-pressed") === "true" || !tr.classList.contains("taken"))
+      && fitOk(tr);
     tr.hidden = !ok;
     shown += ok;
   });
   const taken = allRows.filter(tr => tr.classList.contains("taken")).length;
   document.getElementById("count").textContent = `${shown} of ${allRows.length} players` + (taken ? ` · ${taken} taken` : "");
 }
-[...posButtons, ...flagButtons, showTaken].forEach(b => b.addEventListener("click", () => {
+[...posButtons, ...flagButtons, ...fitButtons, showTaken].forEach(b => b.addEventListener("click", () => {
   b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") === "true" ? "false" : "true");
   applyFilters();
 }));
@@ -1051,8 +1067,7 @@ function renderWeeks(rows, result) {
 
 // A part of the Fit cell: "9/12", colored by the share of his games that your started games get
 function share(got, all) {
-  const r = all ? got / all : 1;
-  const cls = !all ? "muted" : r >= 0.9 ? "g-good" : r >= 0.7 ? "g-warn" : "g-bad";
+  const cls = all ? pctClass(got / all) : "muted";
   return el("span", {className: cls, textContent: `${got}/${all}`});
 }
 
@@ -1069,6 +1084,7 @@ function renderBoard(rows, core) {
     take.textContent = gone ? "↺" : "×";
     take.title = on ? "On your team" : gone ? "Not taken (undo)" : "Taken by another team";
     if (!rows.length || on || !p) {
+      tr.dataset.fit = tr.dataset.hole = "";
       fit.replaceChildren();
       fit.dataset.v = -999;
       fit.removeAttribute("title");
@@ -1078,6 +1094,8 @@ function renderBoard(rows, core) {
     fit.replaceChildren(share(d.started, d.games), " & ", share(d.quality_started, d.quality),
                         d.holes_removed > 0 ? " ⚑" : "");
     fit.dataset.v = d.started + d.quality_started / 100;
+    tr.dataset.fit = d.games ? pctClass(d.started / d.games).slice(2) : "";
+    tr.dataset.hole = d.holes_removed > 0 ? "1" : "";
     fit.title = `Adds ${d.started} of his ${d.games} playoff games and ${d.quality_started} of his ${d.quality} quality games`
       + ` (${d.finals} in the finals). ${d.holes_removed} holes filled.`;
   });

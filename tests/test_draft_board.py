@@ -248,3 +248,8 @@ def test_each_board_row_has_an_add_button_and_a_taken_button():
     cell = draft_board.add_cell(r)
     assert 'class="add" data-id="7"' in cell and 'class="take" data-id="7"' in cell
     assert 'aria-label="Mark Tyrese Maxey taken"' in cell
+
+
+def test_filter_bar_has_fit_buttons_for_each_color_and_for_a_hole():
+    bar = filter_bar(pd.DataFrame({"team": ["BOS"]}))
+    assert re.findall(r'data-fit="(\w+)"', bar) == ["good", "warn", "bad", "hole"]
