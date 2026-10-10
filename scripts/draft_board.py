@@ -6,14 +6,17 @@ yellow = poor. A short playoff week shows a red X in place of both flags ([flags
 A player who rests on back-to-backs has fewer playoff games than his team (playoffs.join_teams()).
 The Risk column shows the injury risk tier. It does not change the value.
 The stat columns are the categories in [weights]. Positions are the Yahoo positions.
+The HTML page also has the team builder (#8): the team bar, the + and Fit columns and the My team tab.
 """
 import json
 from datetime import date
 from html import escape
+from pathlib import Path
 
 import pandas as pd
 
 from common import OUT, load_config, weeks
+from playoffs import playoff_schedule, read_schedule
 from rankings import build_rankings
 
 TITLE = "Playoff Draft Board"
@@ -171,9 +174,12 @@ def html_columns(cfg, lift=False):
                             style=shade(getattr(r, "z_" + cat), 2.5), title=f"z = {getattr(r, 'z_' + cat):+.2f}")
 
     return [
+        ("+", False, False, add_cell),
         ("Rank", True, False, lambda r: td(r.rank)),
         ("Player", False, True, lambda r: td(r.player, cls="name")),
         ("Flags", True, True, lambda r: td(*flags_cell(r))),
+        # The page fills the Fit cells from your team. Δ finals breaks ties.
+        ("Fit", True, False, lambda r: td("", v="-999", cls="fit")),
         ("Team", False, True, lambda r: td(r.team)),
         ("Pos", False, True, lambda r: td(r.pos)),
         ("Value", True, False, lambda r: td(f"{r.value:.2f}")),
@@ -194,6 +200,12 @@ def html_columns(cfg, lift=False):
         ("Risk", True, True, risk_cell),
         *[(label, True, False, stat(cat)) for cat, label in categories(cfg)],
     ]
+
+
+def add_cell(r):
+    """The + button that adds the player to your team. The page turns it off for a player on your team."""
+    return td(f'<button type="button" class="add" data-id="{int(r.player_id)}" '
+              f'aria-label="Add {escape(r.name)} to my team">+</button>', cls="add")
 
 
 def lift_cell(r):
@@ -366,29 +378,95 @@ def combo_panel(combos, summary, df, cfg):
             + "".join(blocks) + "</div>")
 
 
-def tab_bar(keepers):
-    """Board and Core combos tabs, and the keeper list. The keeper list sets the Lift column and the combo list."""
-    opts = "".join(f'<option value="{escape(k)}">{escape(k)}</option>' for k in keepers)
-    return ('<nav class="tabs"><span role="tablist">'
-            '<button type="button" role="tab" data-tab="board" aria-selected="true">Board</button>'
-            '<button type="button" role="tab" data-tab="combos" aria-selected="false">Core combos</button></span>'
-            f'<label>Keeper <select id="keeper" aria-label="Keeper">{opts}</select></label></nav>')
+def tab_bar(keepers=None):
+    """Board and My team tabs. With the simulator files, also the Core combos tab and the keeper list.
+
+    keepers: the keeper names from the simulator, or None. The keeper list sets the Lift column, the combo list
+    and the keeper on your team.
+    """
+    tabs = [("board", "Board"), ("myteam", "My team"), *([("combos", "Core combos")] if keepers else [])]
+    buttons = "".join(f'<button type="button" role="tab" data-tab="{k}" aria-selected="{str(not i).lower()}">{name}</button>'
+                      for i, (k, name) in enumerate(tabs))
+    opts = "".join(f'<option value="{escape(k)}">{escape(k)}</option>' for k in keepers or [])
+    keeper = f'<label>Keeper <select id="keeper" aria-label="Keeper">{opts}</select></label>' if keepers else ""
+    return f'<nav class="tabs"><span role="tablist">{buttons}</span>{keeper}</nav>'
 
 
-def write_html(df, cfg, sim=None):
-    """sim: (combos, summary) from load_simulation(), or None if the auction simulator has not run."""
+def positions(pos, slots):
+    """The Yahoo positions of a player as a list of slots: "PG/SG" gives ["PG", "SG"]. "—" gives []."""
+    return [p for p in str(pos).split("/") if p in slots]
+
+
+def team_data(df, days, cfg):
+    """The page data for the team builder (#8 Contracts): the config values, the playoff days and the players.
+
+    days: the days of playoffs.playoff_schedule(), or None (no days). A player with no team gets team None.
+    [team_builder] in config.toml is optional: core_max_rank 75 and weak_week_started 0 are the defaults.
+    """
+    tb, slots = cfg.get("team_builder", {}), cfg["league"]["slots"]
+    rests = df.get("rests_b2b", pd.Series(0, index=df.index)).fillna(0).astype(int)
+    players = [{"id": int(r.player_id), "name": r.name, "team": None if getattr(r, "no_team", False) else r.team,
+                "pos": positions(r.pos, slots), "rank": int(r.rank), "value": round(float(r.value), 4),
+                "rests_b2b": int(rest),
+                "league_price": None if pd.isna(r.league_price) else int(round(r.league_price))}
+               for r, rest in zip(df.itertuples(), rests)]
+    day_list = [] if days is None else [
+        {"date": f"{d.date:%Y-%m-%d}", "week": d.week, "nba_games": int(d.nba_games), "quality": bool(d.quality),
+         "teams": list(d.teams), "b2b": list(d.b2b)} for d in days.itertuples()]
+    return {"slots": list(slots), "util": 1, "budget": cfg["auction"]["budget"], "spots": cfg["auction"]["spots"],
+            "core_max_rank": tb.get("core_max_rank", 75), "weak_week_started": tb.get("weak_week_started", 0),
+            "weeks": weeks(cfg), "days": day_list, "players": players}
+
+
+# The team engine (#8 Contracts): scoreCore(core, data) and fit(core, player, data).
+# The page inlines scripts/team_builder.js (#36) when the file is there. Else it uses STUB_ENGINE.
+ENGINE = Path(__file__).parent / "team_builder.js"
+STUB_ENGINE = """// Stub engine: the result shapes of #8 with zeros, until scripts/team_builder.js is there.
+function scoreCore(core, data) {
+  const zero = () => ({started: 0, lost: 0, holes: 0});
+  return {
+    weeks: Object.fromEntries(data.weeks.map(w => [w, {...zero(), lost_by: {}}])),
+    total: zero(),
+    finals: zero(),
+    days: data.days.map(d => ({date: d.date, quality: d.quality, starters: {}, sat: [], rested: [], empty: []})),
+  };
+}
+function fit(core, player, data) {
+  return {started: 0, finals: 0, holes_removed: 0};
+}
+module.exports = {scoreCore, fit};
+"""
+
+
+def engine_js():
+    """The JavaScript of the team engine: scripts/team_builder.js, or STUB_ENGINE if the file is not there."""
+    return ENGINE.read_text(encoding="utf-8") if ENGINE.exists() else STUB_ENGINE
+
+
+def script_json(data):
+    """JSON for a <script type="application/json"> block. "</" cannot close the block."""
+    return json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+
+
+def write_html(df, cfg, sim=None, days=None):
+    """sim: (combos, summary) from load_simulation(), or None if the auction simulator has not run.
+
+    days: the days of playoffs.playoff_schedule() for the team builder, or None.
+    """
     t = cfg["board"]
     note = f"All {len(df)} players in the projections, sorted by custom rank. Made {date.today():%Y-%m-%d}."
     flags = "".join(f"<span>{flag_html(letter, cls)} {text}</span>" for letter, cls, text in legend(cfg))
     if sim is None:
-        tabs = combos = ""
+        tabs, combos = tab_bar(), ""
     else:
         tabs = tab_bar(list(sim[0].keeper.unique()))
         combos = combo_panel(*sim, df, cfg)
     html = (HTML.replace("__TITLE__", TITLE).replace("__NOTE__", note).replace("__FLAGS__", flags)
             .replace("__WEEKS__", ", ".join(weeks(cfg))).replace("__LOW__", str(t["low_games"]))
             .replace("__TABS__", tabs).replace("__COMBOS__", combos)
-            .replace("__FILTERS__", filter_bar(df)).replace("__BODY__", html_table(df, cfg)))
+            .replace("__FILTERS__", filter_bar(df)).replace("__BODY__", html_table(df, cfg))
+            # Last, so that no other placeholder can match text in the data or in the engine
+            .replace("__TEAM_DATA__", script_json(team_data(df, days, cfg))).replace("__ENGINE__", engine_js()))
     (OUT / "draft_board.html").write_text(html, encoding="utf-8")
 
 
@@ -473,6 +551,37 @@ table.combo-table tr:last-child td { border-bottom: 0; }
 .g-good { background: color-mix(in srgb, var(--good) 35%, transparent); }
 .g-avg { background: color-mix(in srgb, var(--avg) 50%, transparent); }
 .g-warn { background: color-mix(in srgb, var(--warn) 45%, transparent); }
+.teambar { margin: 12px 0 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border: 1px solid var(--line);
+        border-radius: 14px; background: var(--head); }
+.chip.stream { border-style: dashed; background: none; }
+.chip-name { font-weight: 600; }
+.kmark { display: inline-block; padding: 0 4px; margin-right: 4px; border-radius: 4px; background: var(--q); color: #fff;
+        font-size: 11px; font-weight: 700; }
+.team-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
+.team-summary .warning { color: var(--bad); font-weight: 600; }
+.teambar button, #myteam button, td.add button { font: inherit; color: var(--fg); background: var(--bg);
+        border: 1px solid var(--line); border-radius: 6px; padding: 0 8px; cursor: pointer; }
+.teambar button[aria-pressed="true"], #myteam button[aria-pressed="true"] { background: var(--q); border-color: var(--q); color: #fff; }
+td.add { padding: 2px 6px; }
+td.add button { min-width: 28px; font-weight: 700; }
+td.add button:disabled { opacity: 0.35; cursor: default; }
+tr.mine { background: color-mix(in srgb, var(--q) 12%, transparent); }
+input.price { width: 56px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+        border-radius: 6px; padding: 0 4px; }
+#myteam h2 { font-size: 16px; margin: 16px 0 6px; }
+#myteam .team-summary { margin: 12px 0 8px; }
+table.plain { width: auto; border: 1px solid var(--line); border-radius: 8px; border-collapse: separate; border-spacing: 0; }
+table.plain th { position: static; cursor: default; }
+table.plain th:hover { color: inherit; }
+table.plain th:first-child, table.plain td:first-child { text-align: left; }
+table.plain tr:last-child td, table.plain tr:last-child th { border-bottom: 0; }
+table.days td, table.days th { text-align: center; font-size: 12px; padding: 4px 6px; }
+table.days tbody th { position: sticky; left: 0; background: var(--head); text-align: left; }
+table.days thead th.q { box-shadow: inset 0 -3px var(--q); }
+td.hole, td.weak { background: color-mix(in srgb, var(--bad) 35%, transparent); }
+td.room { background: color-mix(in srgb, var(--avg) 50%, transparent); color: var(--muted); }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -487,18 +596,45 @@ Playoff games is colored by week value: 2-game weeks cost the most. Quality game
 <p>$: auction dollars. League $: expected price in this league. Diff: $ − League $ (green = bargain). Lift: your title % with the player minus without him, for the keeper in the keeper list (only when the auction simulator has run).</p>
 <p>Games is red below __LOW__. ⚠ = fewer than __LOW__ games.
 Risk: injury risk tier (— = no tier). The value already holds the average cost of injuries. A high tier means a larger chance to miss a whole playoff week.</p>
+<p>+: add the player to your team (the team bar and the My team tab). Fit: the change in started games of your core
+in the playoff weeks when the player joins it as a core player. ⚑ = he fills at least one hole (an empty slot on a quality day).
+The finals change breaks ties in the sort. The page keeps your team in this browser.</p>
 <p>Point to a flag to see the reason. Click a column header to sort.
 Pick one or more positions to show players who can play any of them.
 Pick one or more S or Q colors to show players with those flags. A player with an X or no team has no S or Q flags.</p>
 </details>
 __TABS__
 <section id="board" role="tabpanel">
+<div class="teambar" aria-label="My team"><div id="chips" class="chips"></div><div class="team-summary"></div></div>
 __FILTERS__
 __BODY__
+</section>
+<section id="myteam" role="tabpanel" hidden>
+<div class="team-summary"></div>
+<div class="scroll"><table id="roster" class="plain"><thead><tr><th>Player</th><th>Team</th><th>Pos</th><th>Rank</th>
+<th>$</th><th>League $</th><th>Price</th><th>Core</th><th>Risk</th><th></th></tr></thead><tbody></tbody></table></div>
+<h2>Playoff weeks</h2>
+<p>Started and lost games of your core. Lost: a game that the lineup sits in a logjam. Hole: an empty slot on a quality day.</p>
+<div class="scroll"><table id="weeks" class="plain"><thead><tr><th>Week</th><th>Started</th><th>Lost</th><th>Holes</th></tr></thead>
+<tbody></tbody></table></div>
+<h2>Playoff days</h2>
+<p>The lineup of your core on each day. Q = quality day. Red = hole. Gray = stream room (an empty slot on a busy day).</p>
+<div class="scroll"><table id="days" class="plain days"><thead></thead><tbody></tbody></table></div>
 </section>
 <section id="combos" role="tabpanel" hidden>
 __COMBOS__
 </section>
+<script type="application/json" id="team-data">__TEAM_DATA__</script>
+<script>
+// Team engine (#8 Contracts): scoreCore(core, data) and fit(core, player, data). The engine file can declare the
+// functions or export them with module.exports.
+const engine = (() => {
+  const module = {exports: {}};
+  const exports = module.exports;
+__ENGINE__
+  return {scoreCore: module.exports.scoreCore || scoreCore, fit: module.exports.fit || fit};
+})();
+</script>
 <script>
 // Search ignores case and accents, so "jokic" finds "Jokić"
 const fold = s => s.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase();
@@ -585,22 +721,245 @@ sizeButtons.forEach(b => b.addEventListener("click", () => {
 if (keeper) keeper.addEventListener("change", showKeeper);
 applyFilters();
 
-document.querySelectorAll("#board th, .combo-table th").forEach(th => {
-  th.addEventListener("click", () => {
-    const table = th.closest("table"), body = table.tBodies[0], i = th.cellIndex;
-    const desc = !th.classList.contains("desc");
-    const num = th.dataset.num === "1";
-    const key = tr => { const c = tr.cells[i]; return num ? parseFloat(c.dataset.v ?? c.textContent) : c.textContent; };
-    const rows = [...body.rows].sort((a, b) => {
-      const x = key(a), y = key(b);
-      const cmp = num ? x - y : x.localeCompare(y);
-      return desc ? -cmp : cmp;
-    });
-    table.querySelectorAll("th").forEach(h => h.classList.remove("asc", "desc"));
-    th.classList.add(desc ? "desc" : "asc");
-    body.append(...rows);
+function sortTable(th, desc) {
+  const table = th.closest("table"), body = table.tBodies[0], i = th.cellIndex;
+  const num = th.dataset.num === "1";
+  const key = tr => { const c = tr.cells[i]; return num ? parseFloat(c.dataset.v ?? c.textContent) : c.textContent; };
+  const rows = [...body.rows].sort((a, b) => {
+    const x = key(a), y = key(b);
+    const cmp = num ? x - y : x.localeCompare(y);
+    return desc ? -cmp : cmp;
   });
+  table.querySelectorAll("th").forEach(h => h.classList.remove("asc", "desc"));
+  th.classList.add(desc ? "desc" : "asc");
+  body.append(...rows);
+}
+document.querySelectorAll("#board th, .combo-table th").forEach(th =>
+  th.addEventListener("click", () => sortTable(th, !th.classList.contains("desc"))));
+
+// Team builder (#8): your team, the budget, the playoff games of your core and the Fit column
+const data = JSON.parse(document.getElementById("team-data").textContent);
+const byId = new Map(data.players.map(p => [String(p.id), p]));
+const byName = new Map(data.players.map(p => [p.name, p]));
+const STORE = "draft-board-team";
+// Storage can be off (a private window or blocked site data). The page then keeps the team until a refresh.
+function loadTeam() {
+  try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { return {}; }
+}
+function saveTeam() {
+  try {
+    localStorage.setItem(STORE, JSON.stringify({keeper: keeper ? keeper.value : null, keeperCore, picks}));
+  } catch (e) { /* no storage */ }
+}
+const saved = loadTeam();
+// picks: the players that you add with +, in the order that you add them: {id, price, core}.
+// core is true or false after a Core/Stream toggle, or null for the default (rank <= core_max_rank).
+let picks = Array.isArray(saved.picks) ? saved.picks.filter(t => t && byId.has(String(t.id))) : [];
+let keeperCore = typeof saved.keeperCore === "boolean" ? saved.keeperCore : null;
+if (keeper && [...keeper.options].some(o => o.value === saved.keeper)) {
+  keeper.value = saved.keeper;
+  showKeeper();
+}
+
+// A DOM element. A prop name with "-" (aria-label, data-id) is an attribute.
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  Object.entries(props).forEach(([k, v]) => { if (k.includes("-")) e.setAttribute(k, v); else e[k] = v; });
+  e.append(...kids.filter(k => k != null));
+  return e;
+}
+const lastName = name => name.split(" ").slice(1).join(" ") || name;
+const money = v => v == null ? "—" : `$${Math.round(v)}`;
+const sameId = (a, b) => String(a) === String(b);
+
+// Your team: the keeper first (price = league_price, no ×), then the picks
+function myTeam() {
+  const k = keeper ? byName.get(keeper.value) : undefined;
+  const rows = picks.filter(t => !k || !sameId(t.id, k.id)).map(t => ({...t, player: byId.get(String(t.id))}));
+  return k ? [{id: k.id, price: k.league_price ?? 0, core: keeperCore, keeper: true, player: k}, ...rows] : rows;
+}
+const isCore = t => t.core ?? t.player.rank <= data.core_max_rank;
+
+const priceInput = t => el("input", {type: "number", min: 0, step: 1, inputMode: "numeric", className: "price",
+  value: t.price, "data-act": "price", "data-id": t.id, "aria-label": `Price of ${t.player.name}`});
+const coreButton = t => el("button", {type: "button", "data-act": "core", "data-id": t.id,
+  "aria-pressed": String(isCore(t)), title: "Switch between Core and Stream", textContent: isCore(t) ? "Core" : "Stream"});
+const removeButton = t => el("button", {type: "button", "data-act": "remove", "data-id": t.id,
+  "aria-label": `Remove ${t.player.name}`, textContent: "×"});
+const kMark = () => el("span", {className: "kmark", title: "Keeper", textContent: "K"});
+
+// Board rows: the + button and the Fit cell of each player. $ and Risk on the My team tab are copies of board cells.
+const boardRows = allRows.map(tr => ({tr, add: tr.querySelector("button.add"), fit: tr.querySelector("td.fit")}));
+const rowById = new Map(boardRows.map(r => [r.add.dataset.id, r.tr]));
+const boardHeads = [...document.querySelectorAll("#board thead th")];
+const fitHead = boardHeads.find(th => th.textContent === "Fit");
+function boardCell(id, head) {
+  const tr = rowById.get(String(id)), i = boardHeads.findIndex(th => th.textContent === head);
+  return tr && i >= 0 ? tr.cells[i].cloneNode(true) : el("td", {textContent: "—"});
+}
+
+let last = null;
+function render() {
+  const rows = myTeam();
+  const core = rows.filter(isCore).map(t => t.player).sort((a, b) => b.value - a.value);
+  last = {core, result: engine.scoreCore(core, data)};
+  renderChips(rows);
+  renderSummary(rows);
+  renderRoster(rows);
+  renderWeeks(last.result);
+  renderDays(last.result);
+  renderBoard(rows, core);
+  saveTeam();
+}
+
+function renderChips(rows) {
+  const chips = rows.map(t => el("span", {className: isCore(t) ? "chip" : "chip stream"},
+    t.keeper ? kMark() : null, el("span", {className: "chip-name", textContent: t.player.name}),
+    t.keeper ? money(t.price) : priceInput(t), coreButton(t), t.keeper ? null : removeButton(t)));
+  document.getElementById("chips").replaceChildren(...(chips.length ? chips
+    : [el("span", {className: "muted", textContent: "No players on your team. Click + on a row to add a player."})]));
+}
+
+// Budget line, score line and warnings, on the Board tab and on the My team tab
+function renderSummary(rows) {
+  const {core, result} = last;
+  const spent = rows.reduce((s, t) => s + (Number(t.price) || 0), 0), left = data.budget - spent;
+  const empty = data.spots - rows.length;
+  const warnings = [];
+  if (core.length > data.spots - 2) warnings.push(`A core of ${core.length} players leaves fewer than 2 stream spots.`);
+  if (rows.length >= data.spots) warnings.push(`The roster is full (${rows.length} of ${data.spots} players). The + buttons are off.`);
+  document.querySelectorAll(".team-summary").forEach(box => box.replaceChildren(
+    el("span", {textContent: `$${spent} spent · $${left} left · max bid ${empty > 0 ? "$" + (left - (empty - 1)) : "—"}`}),
+    el("span", {textContent: `Core ${core.length} · Stream ${rows.length - core.length} · Started ${result.total.started}`
+      + ` · Lost ${result.total.lost} · Holes ${result.total.holes} · Finals ${result.finals.started}`}),
+    ...warnings.map(w => el("span", {className: "warning", textContent: w})),
+    el("button", {type: "button", "data-act": "reset", title: "Clear the team. The keeper stays.", textContent: "Reset"})));
+}
+
+function renderRoster(rows) {
+  const body = document.querySelector("#roster tbody");
+  body.replaceChildren(...rows.map(t => el("tr", {},
+    el("td", {className: "name"}, t.keeper ? kMark() : null, t.player.name),
+    el("td", {textContent: t.player.team ?? "—"}),
+    el("td", {textContent: t.player.pos.join("/") || "—"}),
+    el("td", {textContent: t.player.rank}),
+    boardCell(t.id, "$"),
+    el("td", {textContent: money(t.player.league_price)}),
+    el("td", {}, t.keeper ? money(t.price) : priceInput(t)),
+    el("td", {}, coreButton(t)),
+    boardCell(t.id, "Risk"),
+    el("td", {}, t.keeper ? null : removeButton(t)))));
+  if (!rows.length) body.append(el("tr", {}, el("td", {colSpan: 10, className: "muted", textContent: "No players on your team."})));
+}
+
+// One row for each playoff week (the last week is the finals) and a total row
+function renderWeeks(result) {
+  const lostText = (lost, by) => [lost, ...Object.entries(by).map(([n, k]) => `${lastName(n)} ×${k}`)].join(" · ");
+  const row = (label, w, by, weak) => el("tr", {}, el("td", {textContent: label}),
+    el("td", {className: weak ? "weak" : "", textContent: w.started,
+              title: weak ? `Fewer than ${data.weak_week_started} started games` : ""}),
+    el("td", {textContent: lostText(w.lost, by)}),
+    el("td", {className: w.holes ? "hole" : "", textContent: w.holes}));
+  const allLost = {};
+  const rows = data.weeks.map((name, i) => {
+    const w = result.weeks[name], by = w.lost_by || {};
+    Object.entries(by).forEach(([n, k]) => allLost[n] = (allLost[n] || 0) + k);
+    const label = i === data.weeks.length - 1 ? `${name} (finals)` : name;
+    return row(label, w, by, w.started < data.weak_week_started);
+  });
+  document.querySelector("#weeks tbody").replaceChildren(...rows, row("Total", result.total, allLost, false));
+}
+
+// One column for each playoff day. A slot shows the starter, a hole (red) or stream room (gray).
+function renderDays(result) {
+  const slots = [...data.slots, ...(data.util ? ["Util"] : [])];
+  const info = new Map(data.days.map(d => [d.date, d]));
+  const head = d => {
+    const i = info.get(d.date) || {}, [y, m, day] = d.date.split("-").map(Number);
+    const weekday = new Date(y, m - 1, day).toLocaleDateString("en-US", {weekday: "short"});
+    return el("th", {className: d.quality ? "q" : "", title: d.quality ? "Quality day" : "Busy day"},
+      el("div", {className: "muted", textContent: i.week ?? ""}), el("div", {textContent: `${weekday} ${m}/${day}`}),
+      el("div", {className: "muted", textContent: `${i.nba_games ?? ""} games${d.quality ? " · Q" : ""}`}));
+  };
+  const cell = (d, slot) => {
+    const who = (d.starters || {})[slot];
+    if (who) return el("td", {textContent: lastName(who), title: who});
+    if (!(d.empty || []).includes(slot)) return el("td");
+    return d.quality ? el("td", {className: "hole", textContent: "hole", title: "Empty slot on a quality day"})
+      : el("td", {className: "room", textContent: "stream", title: "Stream room: an empty slot on a busy day"});
+  };
+  const names = list => el("td", {textContent: (list || []).map(lastName).join(", "), title: (list || []).join(", ")});
+  document.querySelector("#days thead").replaceChildren(el("tr", {}, el("th", {textContent: "Slot"}), ...result.days.map(head)));
+  document.querySelector("#days tbody").replaceChildren(
+    ...slots.map(s => el("tr", {}, el("th", {textContent: s}), ...result.days.map(d => cell(d, s)))),
+    el("tr", {}, el("th", {textContent: "Sat", title: "Sits in a logjam"}), ...result.days.map(d => names(d.sat))),
+    el("tr", {}, el("th", {textContent: "Rested", title: "Rests on the second night of a back-to-back"}),
+      ...result.days.map(d => names(d.rested))));
+}
+
+// The + buttons and the Fit column: Δ started games when the player joins your core as a core player
+function renderBoard(rows, core) {
+  const mine = new Set(rows.map(t => String(t.id))), full = rows.length >= data.spots;
+  boardRows.forEach(({tr, add, fit}) => {
+    const id = add.dataset.id, on = mine.has(id), p = byId.get(id);
+    tr.classList.toggle("mine", on);
+    add.disabled = on || full;
+    add.title = on ? "On your team" : full ? "The roster is full" : "Add to my team";
+    if (!rows.length || on || !p) {
+      fit.textContent = "";
+      fit.dataset.v = -999;
+      fit.removeAttribute("style");
+      fit.removeAttribute("title");
+      return;
+    }
+    const d = engine.fit(core, p, data);
+    const sign = v => (v > 0 ? "+" : "") + v;
+    fit.textContent = sign(d.started) + (d.holes_removed > 0 ? " ⚑" : "");
+    fit.dataset.v = d.started + d.finals / 100;
+    fit.title = `${sign(d.started)} started games, ${sign(d.finals)} in the finals, ${d.holes_removed} holes removed`;
+    const alpha = Math.min(Math.abs(d.started) / 10, 1) * 55;
+    fit.style.background = `color-mix(in srgb, var(${d.started > 0 ? "--good" : "--bad"}) ${alpha}%, transparent)`;
+  });
+  // Keep the sort by Fit when the values change
+  if (fitHead.classList.contains("asc") || fitHead.classList.contains("desc")) sortTable(fitHead, fitHead.classList.contains("desc"));
+}
+
+function addPlayer(id) {
+  const p = byId.get(id), rows = myTeam();
+  if (!p || rows.length >= data.spots || rows.some(t => sameId(t.id, id))) return;
+  // The first price is League $ (at least $1). Change it in the price box.
+  picks.push({id: p.id, price: Math.max(1, Math.round(p.league_price ?? 1)), core: null});
+  render();
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.classList.contains("add")) return addPlayer(b.dataset.id);
+  const act = b.dataset.act, id = b.dataset.id;
+  if (act === "remove") picks = picks.filter(t => !sameId(t.id, id));
+  else if (act === "core") {
+    const t = myTeam().find(t => sameId(t.id, id));
+    if (!t) return;
+    if (t.keeper) keeperCore = !isCore(t);
+    else picks.find(x => sameId(x.id, id)).core = !isCore(t);
+  } else if (act === "reset") {
+    if (!confirm("Clear your team? The keeper stays.")) return;
+    picks = [];
+  } else return;
+  render();
 });
+// A price changes the budget only. The full render waits for the change event, so the price box keeps the focus.
+document.addEventListener("input", e => {
+  if (e.target.dataset.act !== "price") return;
+  const t = picks.find(x => sameId(x.id, e.target.dataset.id));
+  if (!t) return;
+  t.price = Math.max(0, Math.round(Number(e.target.value) || 0));
+  renderSummary(myTeam());
+  saveTeam();
+});
+document.addEventListener("change", e => { if (e.target.dataset.act === "price") render(); });
+if (keeper) keeper.addEventListener("change", () => { keeperCore = null; render(); });
+render();
 </script>
 </body>
 </html>
@@ -631,7 +990,7 @@ def main():
     cfg = load_config()
     df, sim = load_simulation(load(cfg))
     write_markdown(df, cfg)
-    write_html(df, cfg, sim)
+    write_html(df, cfg, sim, playoff_schedule(read_schedule(), cfg)[1])
     print(f"Wrote {len(df)} players to draft_board.md and draft_board.html")
 
 
