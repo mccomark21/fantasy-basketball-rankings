@@ -71,6 +71,35 @@ class Playoffs:
             totals[week] = totals.get(week, 0) + day
         return pd.DataFrame(totals, index=list(self.cfg["weights"])).T
 
+    def game_counts(self, roster):
+        """Started games, lost games and holes of your core for each playoff week (the team builder on the board).
+
+        roster is your core players: a list of dicts with name, team, pos ("PG/SG" or a list), value and rests_b2b.
+        There are no streamers and no production weights. Each day, the best legal lineup adds the players in value
+        order. A rests_b2b player does not play on the second night of a back-to-back: no started and no lost game.
+        - started: a player who gets a starting slot. lost: a player who plays but gets no slot (lost_by: by name).
+        - holes: empty starting slots (position slots + Util) on quality days. Empty slots on busy days are stream room.
+        Returns {"weeks": {week: {started, lost, lost_by, holes}}, "total": {...}, "finals": {...}}.
+        finals is the last playoff week. total and finals have no lost_by.
+        """
+        roster = [{**p, "pos": set(p["pos"].split("/") if isinstance(p["pos"], str) else p["pos"])} for p in roster]
+        size = len(self.cfg["league"]["slots"]) + 1  # + 1 for Util
+        weeks = {w: {"started": 0, "lost": 0, "lost_by": {}, "holes": 0} for w in self.weeks}
+        for week, quality, teams, rest in self.days:
+            playing = [p for p in roster if p["team"] in teams and not self._rests(p, rest)]
+            lineup = self._lineup(playing, key="value")
+            count = weeks[week]
+            count["started"] += len(lineup)
+            for p in playing:
+                if not any(p is q for q in lineup):
+                    count["lost"] += 1
+                    count["lost_by"][p["name"]] = count["lost_by"].get(p["name"], 0) + 1
+            if quality:
+                count["holes"] += size - len(lineup)
+        keys = ["started", "lost", "holes"]
+        return {"weeks": weeks, "total": {k: sum(w[k] for w in weeks.values()) for k in keys},
+                "finals": {k: weeks[self.weeks[-1]][k] for k in keys}}
+
     def draw(self, roster, rng):
         """The roster in one simulated run: each player gets out, the set of days that he misses.
 
@@ -157,10 +186,13 @@ class Playoffs:
                 left[t] = left.get(t, 0) + 1
         return left
 
-    def _lineup(self, playing):
-        """The best legal lineup. Adding players by production is the best order: legal lineups are a matroid."""
+    def _lineup(self, playing, key="prod"):
+        """The best legal lineup. Adding players by production is the best order: legal lineups are a matroid.
+
+        key: the column that sets the order. game_counts() uses value, so the lowest value sits.
+        """
         slots, lineup = self.cfg["league"]["slots"], []
-        for p in sorted(playing, key=lambda p: -p["prod"]):
+        for p in sorted(playing, key=lambda p: -p[key]):
             pos = [q["pos"] for q in lineup] + [p["pos"]]
             # A player who gets no position slot goes to Util. There is one Util slot.
             if len(pos) - (len(slots) - open_slots(pos, slots)) <= 1:

@@ -110,6 +110,14 @@ bonus = 0.10
 low_games = 60             # mark players projected for fewer games than this
 tiers = [20, 40, 60]       # last rank in each tier (Markdown only). The last tier holds all other players.
 
+# Team builder on the draft board: started games, lost games and holes of your core in the playoffs.
+# See Playoffs.game_counts() in scripts/team_score.py.
+[team_builder]
+core_max_rank = 75         # a player with rank <= this number is core by default
+# A week with fewer started games than this gets a red cell.
+# Mean started games per week of the 7-player cores ranked 1-7, 8-14, ... 92-98 (22.9), rounded down.
+weak_week_started = 22
+
 # Flags: green = good, gray = average, yellow = poor.
 # S = playoff games: green at good_playoff_games or more, yellow at poor_playoff_games or fewer.
 # Q = quality games: green at good_quality_games or more, yellow at poor_quality_games or fewer.
