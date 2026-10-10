@@ -74,11 +74,10 @@ def short_legend(cfg):
     f = cfg["flags"]
 
     def rule(name, good, poor):
-        avg = f"{poor + 1}" if good - poor == 2 else f"{poor + 1}–{good - 1}"
-        return f"{name}: {good}+ green, {avg} gray, ≤{poor} yellow"
+        return f"{name}: green {good}+, yellow ≤{poor}"
 
-    lg = [("S", "good", rule("Playoff games", f["good_playoff_games"], f["poor_playoff_games"])),
-          ("Q", "good", rule("Quality games", f["good_quality_games"], f["poor_quality_games"]))]
+    lg = [("S", "good", rule("Games", f["good_playoff_games"], f["poor_playoff_games"])),
+          ("Q", "good", rule("Quality", f["good_quality_games"], f["poor_quality_games"]))]
     if f["avoid_week_games"]:
         lg.append(("X", "bad", f"A week of ≤{f['avoid_week_games']} games"))
     return lg
@@ -580,21 +579,20 @@ table.combo-table tr:last-child td { border-bottom: 0; }
 .team-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-bottom: 6px; }
 .team-head h2 { font-size: 16px; margin: 0; }
 .team-head .warning { color: var(--bad); font-weight: 600; }
-table.team-weeks { margin-top: 8px; }
-table.team-weeks th, table.team-weeks td { padding: 3px 10px; }
+table.team-weeks th, table.team-weeks td { padding: 3px 8px; }
 table.team-weeks tbody th { text-align: left; font-weight: 600; }
 table.team-weeks td.pct { font-weight: 700; }
 table.team-weeks td.weak, table.team-weeks td.hole { background: color-mix(in srgb, var(--bad) 35%, transparent); }
-.team-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 20px; }
+.team-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 16px; }
 .team-main { min-width: 0; max-width: 100%; }
-.team-legend { flex: 0 0 auto; width: 220px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px;
-        box-sizing: border-box; }
-.team-legend.two { width: 440px; column-count: 2; column-gap: 16px; }
-.team-legend h2 { font-size: 14px; margin: 0 0 6px; column-span: all; }
-.team-legend .lg { break-inside: avoid; margin-bottom: 8px; }
+.team-sum { flex: 0 0 auto; }
+.team-legend { flex: 0 0 auto; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; white-space: nowrap; }
+.team-legend.two { column-count: 2; column-gap: 20px; }
+.team-legend h2 { font-size: 14px; margin: 0 0 4px; column-span: all; }
+.team-legend .lg { break-inside: avoid; margin-bottom: 4px; }
 .team-legend h3 { font-size: 12px; margin: 0 0 3px; color: var(--muted); font-weight: 600; }
-.team-legend .legend { display: flex; flex-direction: column; gap: 3px; margin: 0; color: var(--fg); font-size: 12px; }
-.team-legend .flag { width: 16px; height: 16px; font-size: 10px; margin-right: 6px; }
+.team-legend .legend { display: flex; flex-direction: column; gap: 1px; margin: 0; color: var(--fg); font-size: 12px; }
+.team-legend .flag { width: 15px; height: 15px; font-size: 10px; margin-right: 6px; }
 .team-legend table.key td { border: 0; text-align: left; padding: 1px 6px 1px 0; font-size: 12px; }
 .team-legend table.key td.d { text-align: center; padding: 1px; }
 .fit-key { display: inline-block; padding: 0 4px; margin-right: 4px; border-radius: 4px; }
@@ -610,15 +608,15 @@ td.add button.take { color: var(--bad); }
 td.add button:disabled { opacity: 0.35; cursor: default; }
 tr.mine { background: color-mix(in srgb, var(--q) 12%, transparent); }
 tr.taken { opacity: 0.45; }
-input.price { width: 52px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+input.price { width: 40px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
         border-radius: 6px; padding: 0 4px; }
 table.plain { width: auto; border: 1px solid var(--line); border-radius: 8px; border-collapse: separate; border-spacing: 0; }
 table.plain th { position: static; cursor: default; }
 table.plain th:hover { color: inherit; }
-table.team-table th, table.team-table td { padding: 3px 6px; }
+table.team-table th, table.team-table td { padding: 3px 4px; }
 table.team-table td.l, table.team-table th.l { text-align: left; }
 table.team-table tr.open td { color: var(--muted); }
-table.team-table .d { width: 18px; min-width: 18px; padding: 3px 1px; text-align: center; font-size: 12px; }
+table.team-table .d { width: 16px; min-width: 16px; padding: 3px 1px; text-align: center; font-size: 12px; }
 table.team-table th.d { font-size: 11px; font-weight: 600; line-height: 1.15; }
 table.team-table .wk { border-left: 2px solid var(--line); }
 table.team-table .qcol { background: color-mix(in srgb, var(--q) 10%, transparent); }
@@ -667,8 +665,8 @@ __TABS__
 <button type="button" data-act="reset" title="Clear your team and the taken players. The keeper stays.">Reset</button></div>
 <div class="team-body"><div class="team-main">
 <div class="scroll"><table id="roster" class="plain team-table"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
-<div class="scroll"><table id="team-weeks" class="plain team-weeks"><thead></thead><tbody></tbody></table></div>
 </div>
+<div class="team-sum"><table id="team-weeks" class="plain team-weeks"><thead></thead><tbody></tbody></table></div>
 <aside class="team-legend" aria-labelledby="legend-title">
 <h2 id="legend-title">Legend</h2>
 <div class="lg"><h3>Flags</h3><p class="legend">__FLAGS__</p></div>
@@ -676,14 +674,15 @@ __TABS__
 <tr><td class="d on">●</td><td>Starts</td></tr>
 <tr><td class="d on qcol">◆</td><td>Starts, quality day</td></tr>
 <tr><td class="d sat">✕</td><td>Sits (logjam)</td></tr>
-<tr><td class="d rest">r</td><td>Rests (back-to-back)</td></tr>
-<tr><td class="d stream">○</td><td>Plays (stream player)</td></tr>
+<tr><td class="d rest">r</td><td>Rest night</td></tr>
+<tr><td class="d stream">○</td><td>Streamer plays</td></tr>
 <tr><td class="d qcol"></td><td>Quality day</td></tr>
 <tr><td class="d hole">2</td><td>Starters, with a hole</td></tr>
 </tbody></table></div>
-<div class="lg"><h3>Fit: adds / his games</h3><p class="legend">
+<div class="lg"><h3>Fit and %</h3><p class="legend">
 <span><span class="fit-key g-good">≥90%</span><span class="fit-key g-warn">70–89%</span><span class="fit-key g-bad">&lt;70%</span></span>
-<span>Games &amp; quality games. ⚑ fills a hole.</span></p></div>
+<span>Fit: games &amp; quality games added</span>
+<span>⚑ Fills a hole</span></p></div>
 </aside>
 </div>
 </div>
@@ -843,6 +842,8 @@ function el(tag, props = {}, ...kids) {
   e.append(...kids.filter(k => k != null));
   return e;
 }
+// "Giannis Antetokounmpo" gives "G. Antetokounmpo"
+const shortName = name => name.includes(" ") ? `${name[0]}. ${name.split(" ").slice(1).join(" ")}` : name;
 const lastName = name => name.split(" ").slice(1).join(" ") || name;
 const money = v => v == null ? "—" : `$${Math.round(v)}`;
 const sameId = (a, b) => String(a) === String(b);
@@ -930,9 +931,9 @@ function renderHead(rows) {
 function renderTeam(rows) {
   const {result} = last;
   const table = document.getElementById("roster");
-  const info = ["Slot", "Player", "Flags", "Pos", "Paid", "Value", "Games", "Q games", "Core", ""];
+  const info = ["Slot", "Player", "Flags", "Pos", "Paid", "Value", "Gms", "Q", "Core", ""];
   const left = new Set(["Slot", "Player", "Flags", "Pos"]);
-  const heads = {"Games": "Playoff games in each week", "Q games": "Quality games in each week"};
+  const heads = {"Gms": "Playoff games in each week", "Q": "Quality games in each week"};
   const weekHeads = data.weeks.map((w, i) => el("th", {colSpan: dayInfo.filter(d => d.week === w).length, className: "wk",
     textContent: i === data.weeks.length - 1 ? `${w} (finals)` : w}));
   table.tHead.replaceChildren(
@@ -976,7 +977,7 @@ function renderTeam(rows) {
   function teamRow(slot, t) {
     return el("tr", {className: isCore(t) ? "" : "stream"},
     el("td", {className: "l", textContent: slot}),
-    el("td", {className: "l name"}, t.keeper ? kMark() : null, t.player.name),
+    el("td", {className: "l name", title: t.player.name}, t.keeper ? kMark() : null, shortName(t.player.name)),
     flagsCell(t.id),
     el("td", {className: "l", textContent: t.player.pos.join("/") || "—"}),
     el("td", {}, t.keeper ? money(t.price) : priceInput(t)),
@@ -1032,15 +1033,15 @@ function renderWeeks(rows, result) {
   const line = (label, title, cell) => el("tr", {}, el("th", {textContent: label, title}), ...cols.map(cell));
   const table = document.getElementById("team-weeks");
   table.tHead.replaceChildren(el("tr", {}, el("th"), ...data.weeks.map((w, i) =>
-    el("th", {textContent: i === data.weeks.length - 1 ? `${w} (finals)` : w})), el("th", {textContent: "Total"})));
+    el("th", {textContent: w, title: i === data.weeks.length - 1 ? "Finals" : ""})), el("th", {textContent: "Total"})));
   table.tBodies[0].replaceChildren(
     line("Games", "Playoff games of your core players (no rest nights)", c => el("td", {textContent: c.games})),
     line("Started", "Games in the best lineup of each day", c => el("td", {textContent: c.started,
       className: !c.total && core.length && c.started < data.weak_week_started ? "weak" : "",
       title: !c.total && c.started < data.weak_week_started ? `Fewer than ${data.weak_week_started} started games` : ""})),
-    line("Lost (logjam)", "Games that sit because the slots are full", c => el("td", {textContent: c.lost,
+    line("Lost", "Games that sit because the slots are full", c => el("td", {textContent: c.lost,
       className: c.lost ? "g-warn" : "", title: names(c.lost_by)})),
-    line("Quality games", "Games of your core on quality days", c => el("td", {textContent: c.quality})),
+    line("Q games", "Games of your core on quality days", c => el("td", {textContent: c.quality})),
     line("Holes", "Empty slots on quality days", c => el("td", {textContent: c.holes, className: c.holes ? "hole" : ""})),
     line("Used", "Started / games: the share that logjams do not cost", c => pct(c.started, c.games,
       `${c.started} of ${c.games} games start`)),
