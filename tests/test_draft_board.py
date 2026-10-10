@@ -1,3 +1,4 @@
+import json
 import re
 import sys
 from pathlib import Path
@@ -123,24 +124,35 @@ def test_combo_cells_give_the_positions_prices_and_games_of_the_combo():
     assert 'class="g-avg"' in games and 'class="g-good"' in quality
 
 
-def test_board_has_tabs_only_when_the_simulator_has_run(monkeypatch, tmp_path):
+PAGE_CFG = {**CFG, "weights": {"pts": 1.0}, "board": {"low_games": 60},
+            "league": {"teams": 14, "slots": ["PG", "SG", "SF", "PF", "C"]}, "auction": {"budget": 200, "spots": 10}}
+PAGE_DF = pd.DataFrame({"name": ["A", "B"], "pos": ["C", "PG/SG"], "team": ["DEN", "—"], "no_team": [False, True],
+                        "player_id": [3930, 7], "rank": [1, 2], "value": [9.4612, 3.2], "rests_b2b": [0, 1],
+                        "dollars": [10.0, 3.0], "league_price": [12.4, float("nan")],
+                        "wk19": [4, 0], "wk20": [4, 0], "wk21": [4, 0], "q_wk19": [1, 0], "q_wk20": [1, 0], "q_wk21": [1, 0]})
+
+
+def write_page(monkeypatch, tmp_path, sim=None, days=None):
+    """The HTML page for PAGE_DF, with no board table and no filter bar."""
     monkeypatch.setattr(draft_board, "OUT", tmp_path)
-    cfg = {**CFG, "weights": {"pts": 1.0}, "board": {"low_games": 60}}
     monkeypatch.setattr(draft_board, "html_table", lambda df, cfg: "")
     monkeypatch.setattr(draft_board, "filter_bar", lambda df: "")
-    df = pd.DataFrame({"name": ["A"], "pos": ["C"], "dollars": [10.0], "league_price": [12.0],
-                       "wk19": [4], "wk20": [4], "wk21": [4], "q_wk19": [1], "q_wk20": [1], "q_wk21": [1]})
+    draft_board.write_html(PAGE_DF, PAGE_CFG, sim, days)
+    return (tmp_path / "draft_board.html").read_text(encoding="utf-8")
 
-    draft_board.write_html(df, cfg)
-    html = (tmp_path / "draft_board.html").read_text(encoding="utf-8")
-    assert 'data-tab=' not in html and 'id="keeper"' not in html
+
+def test_board_has_the_core_combos_tab_only_when_the_simulator_has_run(monkeypatch, tmp_path):
+    html = write_page(monkeypatch, tmp_path)
+    assert re.findall(r'data-tab="(\w+)"', html) == ["board", "myteam"]
+    assert 'id="keeper"' not in html
+    df, cfg = PAGE_DF, PAGE_CFG
 
     combos = draft_board.top_combos(GROUPS).assign(base=30.0, edge=10.0, price=50.0)
     summary = pd.DataFrame({"cost": [56.0, 16.0], "title_pct": [30.0, 25.0], "playoffs_pct": [99.0, 98.0],
                             "rr_win_pct": [60.0, 58.0]}, index=pd.Index(["Flagg", "Buzelis"], name="keeper"))
     draft_board.write_html(df, cfg, (combos, summary))
     html = (tmp_path / "draft_board.html").read_text(encoding="utf-8")
-    assert re.findall(r'data-tab="(\w+)"', html) == ["board", "combos"]
+    assert re.findall(r'data-tab="(\w+)"', html) == ["board", "myteam", "combos"]
     assert re.findall(r'<option value="([^"]*)"', html) == ["Flagg", "Buzelis"]
     assert "Keeper cost $56" in html and ">+10</td>" in html and ">$50</td>" in html
     # The size filter shows the combos of 3 and 4 when the page opens
@@ -171,3 +183,59 @@ def test_s_flag_note_says_when_the_player_rests_on_back_to_backs(monkeypatch):
     })
     monkeypatch.setattr(draft_board, "build_rankings", lambda c: players.copy())
     assert draft_board.load(cfg).s_note.tolist() == ["11 playoff games", "8 playoff games (rests on back-to-backs)"]
+
+
+def test_page_has_one_team_data_block_with_the_contract_keys(monkeypatch, tmp_path):
+    days = pd.DataFrame({"date": pd.to_datetime(["2027-03-08"]), "week": ["wk19"], "nba_games": [5],
+                         "quality": [True], "teams": [["BOS", "DEN"]], "b2b": [["DEN"]]})
+    html = write_page(monkeypatch, tmp_path, days=days)
+    blocks = re.findall(r'<script type="application/json" id="team-data">(.*?)</script>', html, re.S)
+    assert len(blocks) == 1
+    data = json.loads(blocks[0])
+    assert list(data) == ["slots", "util", "budget", "spots", "core_max_rank", "weak_week_started", "weeks", "days",
+                          "players"]
+    assert (data["util"], data["budget"], data["spots"]) == (1, 200, 10)
+    # No [team_builder] in the config: the defaults
+    assert (data["core_max_rank"], data["weak_week_started"]) == (75, 0)
+    assert data["days"] == [{"date": "2027-03-08", "week": "wk19", "nba_games": 5, "quality": True,
+                             "teams": ["BOS", "DEN"], "b2b": ["DEN"]}]
+    assert data["players"][0] == {"id": 3930, "name": "A", "team": "DEN", "pos": ["C"], "rank": 1, "value": 9.4612,
+                                  "rests_b2b": 0, "league_price": 12}
+    # A player with no team and no League $
+    assert data["players"][1]["team"] is None and data["players"][1]["league_price"] is None
+
+
+def test_team_data_reads_the_team_builder_config():
+    cfg = {**PAGE_CFG, "team_builder": {"core_max_rank": 60, "weak_week_started": 20}}
+    data = draft_board.team_data(PAGE_DF, None, cfg)
+    assert (data["core_max_rank"], data["weak_week_started"], data["days"]) == (60, 20, [])
+
+
+def test_positions_become_a_list_of_slots():
+    slots = ["PG", "SG", "SF", "PF", "C"]
+    assert draft_board.positions("PG/SG", slots) == ["PG", "SG"]
+    assert draft_board.positions("—", slots) == []
+    assert draft_board.team_data(PAGE_DF, None, PAGE_CFG)["players"][1]["pos"] == ["PG", "SG"]
+
+
+def test_page_inlines_team_builder_js_when_the_file_is_there(monkeypatch, tmp_path):
+    monkeypatch.setattr(draft_board, "ENGINE", tmp_path / "missing.js")
+    html = write_page(monkeypatch, tmp_path)
+    assert "Stub engine" in html and "__ENGINE__" not in html
+    engine = tmp_path / "team_builder.js"
+    engine.write_text("function scoreCore() {}  // the real engine", encoding="utf-8")
+    monkeypatch.setattr(draft_board, "ENGINE", engine)
+    html = write_page(monkeypatch, tmp_path)
+    assert "// the real engine" in html and "Stub engine" not in html
+
+
+def test_markdown_board_has_no_team_builder_columns(monkeypatch, tmp_path):
+    monkeypatch.setattr(draft_board, "OUT", tmp_path)
+    cfg = {**PAGE_CFG, "board": {"low_games": 60, "tiers": [20]}}
+    df = PAGE_DF.assign(player=PAGE_DF.name, two_game=False, s_flag="good", q_flag="avg", surplus=[-2.4, float("nan")],
+                        sched_score=1.0, games_wk="4-4-4", quality_wk="1-1-1", games=70, inj_risk="low", stats="20.0")
+    draft_board.write_markdown(df, cfg)
+    md = (tmp_path / "draft_board.md").read_text(encoding="utf-8")
+    assert ("| Rank | Player | Flags | Team | Pos | $ | League $ | Diff | Sched | Playoff games | Quality games "
+            "| Games | Risk | Stats |") in md
+    assert "Fit" not in md and "team-data" not in md
