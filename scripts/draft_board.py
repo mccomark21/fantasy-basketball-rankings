@@ -439,9 +439,12 @@ function scoreCore(core, data) {
   };
 }
 function fit(core, player, data) {
-  return {started: 0, finals: 0, holes_removed: 0};
+  return {started: 0, finals: 0, holes_removed: 0, games: 0, quality: 0, quality_started: 0};
 }
-module.exports = {scoreCore, fit};
+function slotRoster(players, data) {
+  return {slots: {}, bench: players};
+}
+module.exports = {scoreCore, fit, slotRoster};
 """
 
 
@@ -612,7 +615,8 @@ Playoff games is colored by week value: 2-game weeks cost the most. Quality game
 Risk: injury risk tier (— = no tier). The value already holds the average cost of injuries. A high tier means a larger chance to miss a whole playoff week.</p>
 <p>My team: + adds a player to the table at the top. × in the table removes him. × on a board row marks a player
 taken by another team and hides him (Show taken shows him again, ↺ undoes it). Reset clears your team and the taken
-players. The keeper stays. The day columns show your core in the best lineup on each day: green = starts, purple = starts
+players. The keeper stays. Slot: your core fills PG, SG, SF, PF, C and Util in value order, then your stream players.
+A player with no open slot goes to the bench. An empty slot shows a position that you still need. The day columns show your core in the best lineup on each day: green = starts, purple = starts
 on a quality day, red ✕ = sits in a logjam, r = rests on a back-to-back, ○ = a stream player who plays. The last row shows
 the starters on each day, red for a hole (an empty slot on a quality day).</p>
 <p>Fit: the games that the player adds to your started games / his playoff games, then the same for quality games.
@@ -644,7 +648,8 @@ const engine = (() => {
   const module = {exports: {}};
   const exports = module.exports;
 __ENGINE__
-  return {scoreCore: module.exports.scoreCore || scoreCore, fit: module.exports.fit || fit};
+  return {scoreCore: module.exports.scoreCore || scoreCore, fit: module.exports.fit || fit,
+          slotRoster: module.exports.slotRoster || slotRoster};
 })();
 </script>
 <script>
@@ -853,8 +858,8 @@ function renderHead(rows) {
 function renderTeam(rows) {
   const {result} = last;
   const table = document.getElementById("roster");
-  const info = ["#", "Player", "Pos", "Paid", "Value", "Playoff games", "Quality games", "Core", ""];
-  const left = new Set(["Player", "Pos"]);
+  const info = ["Slot", "Player", "Pos", "Paid", "Value", "Playoff games", "Quality games", "Core", ""];
+  const left = new Set(["Slot", "Player", "Pos"]);
   const weekHeads = data.weeks.map((w, i) => el("th", {colSpan: dayInfo.filter(d => d.week === w).length, className: "wk",
     textContent: i === data.weeks.length - 1 ? `${w} (finals)` : w}));
   table.tHead.replaceChildren(
@@ -879,8 +884,24 @@ function renderTeam(rows) {
     if (s === "sat") return el("td", {className: cls + " sat", textContent: "✕", title: `${d.label}: sits in a logjam`});
     return el("td", {className: cls + " rest", textContent: "r", title: `${d.label}: rests on a back-to-back`});
   };
-  const filled = rows.map((t, n) => el("tr", {className: isCore(t) ? "" : "stream"},
-    el("td", {textContent: n + 1}),
+  // Slot rows: the position slots and Util, then the bench. The core goes in first, in value order, then the stream
+  // players. An open slot is an empty row, so the table shows the positions that you still need.
+  const byValue = (a, b) => b.player.value - a.player.value;
+  const order = [...rows.filter(isCore).sort(byValue), ...rows.filter(t => !isCore(t)).sort(byValue)];
+  const slotted = engine.slotRoster(order.map(t => t.player), data);
+  const rowOf = new Map(order.map(t => [t.player, t]));
+  const starting = [...data.slots, ...Array.from({length: data.util ?? 1}, (_, i) => i ? `Util${i + 1}` : "Util")];
+  const benchSize = Math.max(data.spots - starting.length, slotted.bench.length);
+  const lines = [...starting.map(s => [s, slotted.slots[s]]),
+                 ...Array.from({length: benchSize}, (_, i) => ["Bench", slotted.bench[i]])];
+  const filled = lines.map(([slot, p]) => p ? teamRow(slot, rowOf.get(p)) : el("tr", {className: "open"},
+    el("td", {className: "l", textContent: slot}), el("td", {className: "l", colSpan: 8, textContent: "— empty —"}),
+    ...dayInfo.map(d => el("td", {className: dayClass(d)}))));
+  table.tBodies[0].replaceChildren(...filled);
+
+  function teamRow(slot, t) {
+    return el("tr", {className: isCore(t) ? "" : "stream"},
+    el("td", {className: "l", textContent: slot}),
     el("td", {className: "l name"}, t.keeper ? kMark() : null, t.player.name),
     el("td", {className: "l", textContent: t.player.pos.join("/") || "—"}),
     el("td", {}, t.keeper ? money(t.price) : priceInput(t)),
@@ -889,11 +910,8 @@ function renderTeam(rows) {
     el("td", {textContent: weekGames(t.player, true)}),
     el("td", {}, coreButton(t)),
     el("td", {}, t.keeper ? null : removeButton(t)),
-    ...dayInfo.map((_, i) => dayCell(t, i))));
-  const open = Array.from({length: Math.max(0, data.spots - rows.length)}, (_, n) => el("tr", {className: "open"},
-    el("td", {textContent: rows.length + n + 1}), el("td", {className: "l", colSpan: 8, textContent: "— empty —"}),
-    ...dayInfo.map(d => el("td", {className: dayClass(d)}))));
-  table.tBodies[0].replaceChildren(...filled, ...open);
+    ...dayInfo.map((_, i) => dayCell(t, i)));
+  }
 
   // Starters on each day. Red: a hole (an empty slot on a quality day).
   const slots = data.slots.length + (data.util ?? 1);

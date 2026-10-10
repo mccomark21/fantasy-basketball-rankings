@@ -14,9 +14,10 @@ from common import DATA, load_config  # noqa: E402
 ENGINE = ROOT / "scripts" / "team_builder.js"
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node is not on PATH")
 
-# Reads {"data", "core": [ids], "fit": [ids]} on stdin. Writes {"score", "fits", "ms"}: ms = time of all fit calls.
+# Reads {"data", "core": [ids], "fit": [ids]} on stdin. Writes {"score", "fits", "ms", "slots", "bench"}:
+# ms = time of all fit calls. slots and bench: slotRoster of the core in the order of core, as player names.
 DRIVER = """
-const { scoreCore, fit } = require(process.argv[1]);
+const { scoreCore, fit, slotRoster } = require(process.argv[1]);
 let text = "";
 process.stdin.on("data", c => (text += c));
 process.stdin.on("end", () => {
@@ -26,7 +27,10 @@ process.stdin.on("end", () => {
   const score = scoreCore(team, data);
   const start = performance.now();
   const fits = ids.map(id => fit(team, byId.get(id), data));
-  process.stdout.write(JSON.stringify({ score, fits, ms: performance.now() - start }));
+  const ms = performance.now() - start;
+  const roster = slotRoster(team, data);
+  const slots = Object.fromEntries(Object.entries(roster.slots).map(([s, p]) => [s, p.name]));
+  process.stdout.write(JSON.stringify({ score, fits, ms, slots, bench: roster.bench.map(p => p.name) }));
 });
 """
 
@@ -128,6 +132,15 @@ def test_fit_games_leave_out_rest_nights():
     days = [day(["NY"], quality=True, b2b=["NY"]), day(["NY"], date="2027-03-23")]
     fits = engine(data(days, players), [1], fit=[2])["fits"]
     assert fits == [{"started": 1, "finals": 1, "holes_removed": 0, "games": 1, "quality": 0, "quality_started": 0}]
+
+
+def test_slot_roster_fills_position_slots_then_util_then_the_bench():
+    players = [player(1, "BOS", "PG", 9), player(2, "NY", "PG", 8), player(3, "LAL", "PG/SG", 7),
+               player(4, "BOS", "C", 6), player(5, "NY", "PG", 5), player(6, "LAL", "", 4)]
+    result = engine(data([day(["BOS"])], players), [1, 2, 3, 4, 5, 6])
+    # p3 moves to SG so that p2 can take Util. p5 has no PG or Util slot left. p6 has no position.
+    assert result["slots"] == {"PG": "p1", "SG": "p3", "C": "p4", "Util": "p2"}
+    assert result["bench"] == ["p5", "p6"]
 
 
 def test_fit_for_500_players_takes_less_than_100_ms():
