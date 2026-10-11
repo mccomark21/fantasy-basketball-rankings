@@ -85,6 +85,16 @@ weeks = [
   { name = "wk20", start = 2027-03-15, end = 2027-03-21 },
   { name = "wk21", start = 2027-03-22, end = 2027-03-28 },
 ]
+# Other playoff windows, for public leagues. draft_board.py writes one more page for each window:
+# draft_board_<first week>-<last week>.html. The page has no simulator columns and keeps its own team.
+# A list on the board switches between the pages. The weeks above stay the default.
+other_windows = [
+  [
+    { name = "wk20", start = 2027-03-15, end = 2027-03-21 },
+    { name = "wk21", start = 2027-03-22, end = 2027-03-28 },
+    { name = "wk22", start = 2027-03-29, end = 2027-04-04 },
+  ],
+]
 
 # Value of one playoff week for each number of games, relative to a 3-game week.
 # A linear scale is 2 = 0.67 and 4 = 1.33. These values make 2-game weeks

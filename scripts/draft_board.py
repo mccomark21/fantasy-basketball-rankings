@@ -8,6 +8,7 @@ The Risk column shows the injury risk tier. It does not change the value.
 The stat columns are the categories in [weights]. Positions are the Yahoo positions.
 The HTML page also has the team builder (#8): the team bar, the + and Fit columns and the My team tab.
 """
+import copy
 import json
 from datetime import date
 from html import escape
@@ -409,20 +410,50 @@ def combo_panel(combos, summary, df, cfg):
             + "".join(blocks) + "</div>")
 
 
-def tab_bar(keepers=None):
-    """The Board tab. With the simulator files, also the Core combos tab and the keeper list.
+MAIN_PAGE = "draft_board.html"
+
+
+def tab_bar(keepers=None, pages=None, page=MAIN_PAGE):
+    """The tab bar. With the simulator files: the Board and Core combos tabs and the keeper list.
+    With more than one playoff window: the list of playoff windows. With neither, no tab bar.
 
     keepers: the keeper names from the simulator, or None. The keeper list sets the Lift column, the combo list
     and the keeper on your team.
+    pages: (label, file) for each playoff window (pages()). page: the file of this page.
     """
-    if not keepers:
-        return ""
-    tabs = [("board", "Board"), ("combos", "Core combos")]
-    buttons = "".join(f'<button type="button" role="tab" data-tab="{k}" aria-selected="{str(not i).lower()}">{name}</button>'
-                      for i, (k, name) in enumerate(tabs))
-    opts = "".join(f'<option value="{escape(k)}">{escape(k)}</option>' for k in keepers)
-    keeper = f'<label>Keeper <select id="keeper" aria-label="Keeper">{opts}</select></label>'
-    return f'<nav class="tabs"><span role="tablist">{buttons}</span>{keeper}</nav>'
+    parts = []
+    if keepers:
+        tabs = [("board", "Board"), ("combos", "Core combos")]
+        parts.append('<span role="tablist">' + "".join(
+            f'<button type="button" role="tab" data-tab="{k}" aria-selected="{str(not i).lower()}">{name}</button>'
+            for i, (k, name) in enumerate(tabs)) + "</span>")
+        opts = "".join(f'<option value="{escape(k)}">{escape(k)}</option>' for k in keepers)
+        parts.append(f'<label>Keeper <select id="keeper" aria-label="Keeper">{opts}</select></label>')
+    if pages and len(pages) > 1:
+        opts = "".join(f'<option value="{f}"{" selected" if f == page else ""}>{escape(label)}</option>'
+                       for label, f in pages)
+        parts.append(f'<label>Playoffs <select id="window" aria-label="Playoff weeks">{opts}</select></label>')
+    return f'<nav class="tabs">{"".join(parts)}</nav>' if parts else ""
+
+
+def windows(cfg):
+    """A config for each playoff window: cfg, then one for each [playoffs] other_windows."""
+    out = [cfg]
+    for wks in cfg["playoffs"].get("other_windows", []):
+        other = copy.deepcopy(cfg)
+        other["playoffs"]["weeks"] = wks
+        out.append(other)
+    return out
+
+
+def pages(cfgs):
+    """(label, file) for each playoff window. The first window is the main page. Example: ("Weeks 20–22",
+    "draft_board_wk20-wk22.html")."""
+    def label(c):
+        ws = weeks(c)
+        return f"Weeks {ws[0].removeprefix('wk')}–{ws[-1].removeprefix('wk')}"
+    return [(label(c), MAIN_PAGE if i == 0 else f"draft_board_{weeks(c)[0]}-{weeks(c)[-1]}.html")
+            for i, c in enumerate(cfgs)]
 
 
 def positions(pos, slots):
@@ -485,26 +516,30 @@ def script_json(data):
     return json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
 
 
-def write_html(df, cfg, sim=None, days=None):
+def write_html(df, cfg, sim=None, days=None, page=MAIN_PAGE, windows=None):
     """sim: (combos, summary) from load_simulation(), or None if the auction simulator has not run.
 
     days: the days of playoffs.playoff_schedule() for the team builder, or None.
+    page: the file to write in OUT. windows: (label, file) for each playoff window (pages()), or None.
+    Each page keeps its own team in the browser.
     """
     t = cfg["board"]
     note = f"All {len(df)} players in the projections, sorted by custom rank. Made {date.today():%Y-%m-%d}."
     flags = "".join(f"<span>{flag_html(letter, cls)}{text}</span>" for letter, cls, text in short_legend(cfg))
     if sim is None:
-        tabs, combos = tab_bar(), ""
+        tabs, combos = tab_bar(None, windows, page), ""
     else:
-        tabs = tab_bar(list(sim[0].keeper.unique()))
+        tabs = tab_bar(list(sim[0].keeper.unique()), windows, page)
         combos = combo_panel(*sim, df, cfg)
+    store = "draft-board-team" if page == MAIN_PAGE else "draft-board-team-" + page.removesuffix(".html")
     html = (HTML.replace("__TITLE__", TITLE).replace("__NOTE__", note).replace("__FLAGS__", flags)
             .replace("__WEEKS__", ", ".join(weeks(cfg))).replace("__LOW__", str(t["low_games"]))
             .replace("__TABS__", tabs).replace("__COMBOS__", combos)
             .replace("__FILTERS__", filter_bar(df)).replace("__BODY__", html_table(df, cfg))
+            .replace("__STORE__", json.dumps(store)).replace("__MAIN_PAGE__", json.dumps(MAIN_PAGE))
             # Last, so that no other placeholder can match text in the data or in the engine
             .replace("__TEAM_DATA__", script_json(team_data(df, days, cfg))).replace("__ENGINE__", engine_js()))
-    (OUT / "draft_board.html").write_text(html, encoding="utf-8")
+    (OUT / page).write_text(html, encoding="utf-8")
 
 
 HTML = """<!doctype html>
@@ -819,6 +854,12 @@ sizeButtons.forEach(b => b.addEventListener("click", () => {
   showSizes();
 }));
 if (keeper) keeper.addEventListener("change", showKeeper);
+// The playoff window list opens the page of the window. On GitHub Pages, the main page is index.html.
+const windowList = document.getElementById("window");
+if (windowList) windowList.addEventListener("change", () => {
+  const v = windowList.value;
+  location.href = location.protocol.startsWith("http") && v === __MAIN_PAGE__ ? "./" : v;
+});
 applyFilters();
 
 function sortTable(th, desc) {
@@ -841,7 +882,8 @@ document.querySelectorAll("#board .wrap th, .combo-table th").forEach(th =>
 const data = JSON.parse(document.getElementById("team-data").textContent);
 const byId = new Map(data.players.map(p => [String(p.id), p]));
 const byName = new Map(data.players.map(p => [p.name, p]));
-const STORE = "draft-board-team";
+// Each playoff window keeps its own team
+const STORE = __STORE__;
 // Storage can be off (a private window or blocked site data). The page then keeps the team until a refresh.
 function loadTeam() {
   try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { return {}; }
@@ -1201,11 +1243,16 @@ def load_simulation(df):
 
 
 def main():
-    cfg = load_config()
-    df, sim = load_simulation(load(cfg))
-    write_markdown(df, cfg)
-    write_html(df, cfg, sim, playoff_schedule(read_schedule(), cfg)[1])
-    print(f"Wrote {len(df)} players to draft_board.md and draft_board.html")
+    cfgs = windows(load_config())
+    files, schedule = pages(cfgs), read_schedule()
+    for i, cfg in enumerate(cfgs):
+        df, sim = load(cfg), None
+        # The simulator results are for the main window only
+        if i == 0:
+            df, sim = load_simulation(df)
+            write_markdown(df, cfg)
+        write_html(df, cfg, sim, playoff_schedule(schedule, cfg)[1], files[i][1], files)
+    print(f"Wrote {len(df)} players to draft_board.md and " + ", ".join(f for _, f in files))
 
 
 if __name__ == "__main__":

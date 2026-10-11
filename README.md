@@ -105,6 +105,8 @@ python scripts/publish.py      # Push output/draft_board.html to the gh-pages br
 
 The page is at `https://mccomark21.github.io/fantasy-basketball-rankings/`. GitHub can take a few minutes to show a new board.
 
+For public leagues with other playoff weeks, `[playoffs] other_windows` in `config.toml` lists more playoff windows. `draft_board.py` writes one more page for each window, for example `draft_board_wk20-wk22.html`, and `publish.py` publishes it next to `index.html`. The Playoffs list on the board switches between the pages. A window page has no simulator columns and keeps its own team.
+
 The published page is public. Anyone with the URL can see it. GitHub Pages has no private sites on this plan.
 
 The script does not change your working tree or your current branch. It replaces the one commit on `gh-pages` each time, so old boards do not stay in the repo.

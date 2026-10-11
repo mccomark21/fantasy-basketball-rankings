@@ -253,3 +253,17 @@ def test_each_board_row_has_an_add_button_and_a_taken_button():
 def test_filter_bar_has_fit_buttons_for_each_color_and_for_a_hole():
     bar = filter_bar(pd.DataFrame({"team": ["BOS"]}))
     assert re.findall(r'data-fit="(\w+)"', bar) == ["good", "warn", "bad", "hole"]
+
+
+def test_other_playoff_windows_get_their_own_page_and_label():
+    week = lambda n, d: {"name": f"wk{n}", "start": d, "end": d}
+    cfg = {"playoffs": {"weeks": [week(19, 1), week(21, 3)], "other_windows": [[week(20, 2), week(22, 4)]]}}
+    cfgs = draft_board.windows(cfg)
+    assert [draft_board.weeks(c) for c in cfgs] == [["wk19", "wk21"], ["wk20", "wk22"]]
+    assert cfg["playoffs"]["weeks"][0]["name"] == "wk19"  # the main config does not change
+    pages = draft_board.pages(cfgs)
+    assert pages == [("Weeks 19–21", "draft_board.html"), ("Weeks 20–22", "draft_board_wk20-wk22.html")]
+    bar = draft_board.tab_bar(None, pages, "draft_board_wk20-wk22.html")
+    assert 'id="keeper"' not in bar and 'data-tab=' not in bar
+    assert '<option value="draft_board_wk20-wk22.html" selected>Weeks 20–22</option>' in bar
+    assert draft_board.tab_bar(None, pages[:1]) == ""
