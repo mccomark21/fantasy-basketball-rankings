@@ -94,8 +94,8 @@ def write_markdown(df, cfg):
         "League $": lambda r: "—" if pd.isna(r.league_price) else f"${r.league_price:.0f}",
         "Diff": lambda r: "—" if pd.isna(r.surplus) else f"{r.surplus:+.0f}",
         "Sched": lambda r: f"{r.sched_score:.2f}",
-        "Playoff games": lambda r: r.games_wk,
-        "Quality games": lambda r: r.quality_wk,
+        "Playoffs": lambda r: r.games_wk,
+        "Quality": lambda r: r.quality_wk,
         "Games": lambda r: r.games,
         "Stats": lambda r: r.stats,
     }
@@ -106,7 +106,7 @@ def write_markdown(df, cfg):
         f"All {len(df)} players in the projections, sorted by custom rank. Made {date.today():%Y-%m-%d} by `draft_board.py`.", "",
         *[f"- {letter} = {text}" for letter, _, text in legend(cfg)],
         f"- **Stats:** {' / '.join(label for _, label in categories(cfg))} for each game.",
-        f"- **Playoff games** and **quality games:** for each week ({', '.join(weeks(cfg))}). The last week is the finals.",
+        f"- **Playoffs** and **Quality:** the playoff games and the quality games for each week ({', '.join(weeks(cfg))}). The last week is the finals.",
         "- **Pos:** Yahoo positions. — = not in the Yahoo top 500.",
         "- **Sched:** playoff schedule score of the team (1.00 = league average).",
         f"- **$:** auction dollars (${cfg['auction']['budget']} budget). $0 = not in the top {cfg['league']['teams'] * cfg['auction']['spots']}.",
@@ -183,10 +183,10 @@ def html_columns(cfg):
         ("Diff", True, False, lambda r: td("—", v="-999") if pd.isna(r.surplus)
          else td(f"{r.surplus:+.0f}", v=f"{r.surplus:.2f}", style=shade(r.surplus, 15))),
         ("Sched", True, False, lambda r: td(f"{r.sched_score:.2f}", style=shade(r.sched_score - 1, 0.2))),
-        ("Playoff games", True, False, lambda r: td(r.games_wk, v=f"{r.week_score:.3f}",
+        ("Playoffs", True, False, lambda r: td(r.games_wk, v=f"{r.week_score:.3f}",
                                                     style=shade(r.week_score - 1.2, 0.2), title=f"{r.playoff_games} games")),
         # Finals quality games break ties
-        ("Quality games", True, False, lambda r: td(r.quality_wk, v=f"{r.quality_games + 0.01 * r.finals_quality:.2f}",
+        ("Quality", True, False, lambda r: td(r.quality_wk, v=f"{r.quality_games + 0.01 * r.finals_quality:.2f}",
                                                     style=shade(r.quality_games - q_mid, q_scale),
                                                     title=f"{r.quality_games} quality games")),
         ("Games", True, False, lambda r: td(r.games, style=shade(r.games - t["low_games"], 15))),
@@ -241,7 +241,7 @@ def dropdown(key, label, items):
 
 def filter_bar(df):
     """Search box and the drop-downs (positions, fit, S and Q flags) above the table."""
-    names = {"s": "Playoff games", "q": "Quality games"}
+    names = {"s": "Playoffs", "q": "Quality"}
     colors = {"good": "green", "avg": "gray", "warn": "yellow"}
     pos = dropdown("pos", "Position", [(p, p, p) for p in ("PG", "SG", "SF", "PF", "C")])
     flags = "".join(
@@ -323,7 +323,7 @@ def grade(n, good, poor):
 
 COMBO_HEADS = [("Combo", False), ("Size", True), ("Positions", True), ("Title %", True), ("Edge", True),
                ("Auctions", True), ("Median price", True), ("$", True), ("League $", True),
-               ("Playoff games", True), ("Quality games", True)]
+               ("Playoffs", True), ("Quality", True)]
 
 
 def keeper_line(keeper, summary):
@@ -665,8 +665,8 @@ td.fit span { display: inline-block; padding: 0 4px; border-radius: 4px; }
 <h1>__TITLE__</h1>
 <p>__NOTE__</p>
 <details class="notes"><summary>How to read this board</summary>
-<p>Stats are per game, colored by z-score. Playoff games and quality games are shown for each week (__WEEKS__).
-Playoff games is colored by week value: 2-game weeks cost the most. Quality games is colored by the total.</p>
+<p>Stats are per game, colored by z-score. The Playoffs and Quality columns show the playoff games and the quality games for each week (__WEEKS__).
+Playoffs is colored by week value: 2-game weeks cost the most. Quality is colored by the total.</p>
 <p>Pos: Yahoo positions (— = not in the Yahoo top 500). Sched: 1.00 = league average. A player who rests on back-to-backs misses the second nights in the playoff columns, the S flag and Sched.</p>
 <p>$: auction dollars. League $: expected price in this league. Diff: $ − League $ (green = bargain).</p>
 <p>Games is red below __LOW__. ⚠ = fewer than __LOW__ games.</p>

@@ -226,7 +226,7 @@ def test_markdown_board_has_no_team_builder_columns(monkeypatch, tmp_path):
                         sched_score=1.0, games_wk="4-4-4", quality_wk="1-1-1", games=70, inj_risk="low", stats="20.0")
     draft_board.write_markdown(df, cfg)
     md = (tmp_path / "draft_board.md").read_text(encoding="utf-8")
-    assert ("| Rank | Player | Flags | Team | Pos | $ | League $ | Diff | Sched | Playoff games | Quality games "
+    assert ("| Rank | Player | Flags | Team | Pos | $ | League $ | Diff | Sched | Playoffs | Quality "
             "| Games | Stats |") in md
     assert "Fit" not in md and "team-data" not in md
 
