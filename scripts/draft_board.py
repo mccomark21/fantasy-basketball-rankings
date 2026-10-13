@@ -525,8 +525,8 @@ body { margin: 0; padding: 24px 10px; background: var(--bg); color: var(--fg);
        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
 h1 { font-size: 22px; margin: 0 0 4px; }
 p { margin: 0 0 8px; color: var(--muted); }
-.wrap { overflow: auto; max-height: calc(100vh - 32px); border: 1px solid var(--line); border-radius: 8px; }
-table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.wrap { width: fit-content; max-width: 100%; overflow: auto; max-height: calc(100vh - 32px); border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: auto; font-variant-numeric: tabular-nums; }
 th, td { padding: 5px 6px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .wrap th { white-space: normal; line-height: 1.15; vertical-align: bottom; }
 th { position: sticky; top: 0; background: var(--head); cursor: pointer; user-select: none; font-weight: 600; }
