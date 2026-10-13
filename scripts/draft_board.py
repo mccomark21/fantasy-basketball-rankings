@@ -521,13 +521,14 @@ HTML = """<!doctype html>
 }
 :root[data-theme="dark"] { --bg: #1c1917; --fg: #f5f5f4; --muted: #a8a29e; --line: #44403c;
         --head: #292524; --good: #22c55e; --bad: #ef4444; --warn: #facc15; --avg: #57534e; --q: #a78bfa; }
-body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--fg);
+body { margin: 0; padding: 24px 10px; background: var(--bg); color: var(--fg);
        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
 h1 { font-size: 22px; margin: 0 0 4px; }
 p { margin: 0 0 8px; color: var(--muted); }
 .wrap { overflow: auto; max-height: calc(100vh - 32px); border: 1px solid var(--line); border-radius: 8px; }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th, td { padding: 5px 6px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.wrap th { white-space: normal; line-height: 1.15; vertical-align: bottom; }
 th { position: sticky; top: 0; background: var(--head); cursor: pointer; user-select: none; font-weight: 600; }
 th:hover { color: var(--q); }
 th.asc::after { content: " ▲"; } th.desc::after { content: " ▼"; }
@@ -628,8 +629,8 @@ table.combo-table tr:last-child td { border-bottom: 0; }
 .team-head button[data-act="reset"] { border-color: var(--bad); color: var(--bad); font-weight: 600; }
 .kmark { display: inline-block; padding: 0 4px; margin-right: 4px; border-radius: 4px; background: var(--q); color: #fff;
         font-size: 11px; font-weight: 700; }
-td.add { padding: 2px 6px; }
-td.add button { min-width: 26px; font-weight: 700; margin-right: 3px; }
+td.add { padding: 2px 4px; }
+td.add button { min-width: 22px; padding: 4px 4px; font-weight: 700; margin-right: 2px; }
 td.add button.take { color: var(--bad); }
 td.add button:disabled { opacity: 0.35; cursor: default; }
 tr.mine { background: color-mix(in srgb, var(--q) 12%, transparent); }
