@@ -7,7 +7,7 @@ Output: rankings.csv. draft_board.py calls build_rankings() to get all the colum
 """
 import pandas as pd
 
-from common import DATA, OUT, ROOT, load_config, name_key, weeks
+from common import DATA, OUT, ROOT, latest_projections, load_config, name_key, weeks
 from identity import link_players
 from market import league_prices
 from playoffs import join_teams, playoff_schedule, read_schedule, schedule_columns, schedule_grid
@@ -25,7 +25,7 @@ STATS = {
 
 
 def load_players(cfg):
-    df = pd.read_csv(ROOT / cfg["league"]["projections"])
+    df = pd.read_csv(latest_projections(cfg))
     df = df[df.games > 0].copy()
     df["name"] = df.first_name + " " + df.last_name
     for cat, calc in STATS.items():

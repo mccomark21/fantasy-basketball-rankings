@@ -6,7 +6,7 @@ roster_spots = 10          # 6 starters (PG, SG, SF, PF, C, Util) + 4 bench; the
 slots = ["PG", "SG", "SF", "PF", "C"]  # starting slots for one position (Util and bench take any player)
 adds = 5                   # adds each week
 playoff_teams = 8          # teams in the playoff bracket (a power of 2)
-projections = "data/Projections.csv"
+projections = "data/Projections_*.csv"   # the script uses the newest file; name each file with its download date
 espn_season = 2027         # ESPN uses the year that the season ends
 
 # Auction dollars: the teams buy the top teams x spots players by value. Each bought player gets min_bid.
@@ -46,7 +46,7 @@ file = "data/projection_risk.csv"
 # Chance that a player misses a whole playoff week, for each inj_risk tier. The projected games already hold
 # the average cost of injuries, so the simulator raises his production on the days that he plays to keep his
 # expected production the same. The chance changes the spread only: a high-risk core can lose a whole week.
-# First values: the share of the season that each tier misses in data/Projections.csv (1 - mean games / 82):
+# First values: the share of the season that each tier misses in the newest projections file (1 - mean games / 82):
 # low 78 games, med 72, high 67, extreme 60. There is no better source yet.
 missed_week = { low = 0.05, med = 0.12, high = 0.19, extreme = 0.27 }
 missing_tier = "med"       # tier for a player who is not in the file (med is the most common tier)

@@ -43,7 +43,7 @@ The scripts run in sequence. The fetch scripts write the files in `data/`. `rank
 `draft_board.py` calls `build_rankings()` in `rankings.py`. It does not read `rankings.csv`.
 
 ```
-data/Projections.csv ──┐
+data/Projections_DATE.csv┐
 ESPN (fetch_data.py) ──┼──> rankings.py ──> output/rankings.csv, output/playoff_schedule.csv
 Yahoo (fetch_yahoo.py) ┘        │
                                 └──> draft_board.py ──> output/draft_board.html, output/draft_board.md
@@ -77,7 +77,7 @@ Yahoo (fetch_yahoo.py) ┘        │
    python -m playwright install chromium
    ```
 
-3. Put the season projections in `data/Projections.csv`.
+3. Put the season projections in `data/Projections_YYYY-MM-DD.csv`. Use the download date. The scripts use the newest file.
 
 ### Usage
 
@@ -165,7 +165,7 @@ tests/                    Tests for valuation.py, identity.py, playoffs.py, draf
 
 | File | Purpose | Edit by hand |
 |---|---|---|
-| `data/Projections.csv` | Season projections. Replace the file when projections change. | Yes |
+| `data/Projections_YYYY-MM-DD.csv` | Season projections. Add a new file with the download date when projections change. The scripts use the newest file. | Yes |
 | `data/name_overrides.csv` | Name fixes for players who do not match: the ESPN name (`espn_name`), the Yahoo name (`yahoo_name`) or a fixed team (`team`). | Yes |
 | `data/rosters.csv`, `data/schedule.csv` | ESPN data from `fetch_data.py`. | No |
 | `data/projection_risk.csv` | Injury risk tier (`inj_risk`) and back-to-back rest (`rests_b2b`) for each player, from the projections page. | Yes |
@@ -235,7 +235,7 @@ For each keeper, the output shows your title percent, your face-off results, you
 
 The auctions run in parallel, one process for each CPU core. Each keeper gets the same random seeds, so the comparison between keepers is fair. 2,000 auctions for each keeper take about 5 minutes on 16 cores.
 
-The simulator writes the `simulation_*.csv` files to `output/`. Run `draft_board.py` after it: the board then shows a **Core combos** tab and a **Lift** column. The tab shows the combos of 3 or 4 with the best low end, for the keeper that you pick, with the playoff games and quality games of each combo. Click a combo to show only its players on the board.
+The simulator writes the `simulation_*.csv` files to `output/`. Run `draft_board.py` after it: the board then shows a **Core combos** tab. The tab shows the combos of 3 or 4 with the best low end, for the keeper that you pick, with the playoff games and quality games of each combo. Click a combo to show only its players on the board.
 
 ### Playoff score
 
@@ -250,11 +250,11 @@ The simulator writes the `simulation_*.csv` files to `output/`. Run `draft_board
 
 The simulator adds the risk that the value does not show. The settings are in `[risk]`.
 
-The rankings and the draft board use the same file. The schedule columns and the S flag do not count the second nights for a player with `rests_b2b`. The board shows `inj_risk` in the Risk column. Neither changes `value`.
+The rankings and the draft board use the same file. The schedule columns and the S flag do not count the second nights for a player with `rests_b2b`. This does not change `value`.
 
 - Back-to-back rest: a player with `rests_b2b` sits on the second night of a back-to-back with the chance `rest_chance` (1.0). The playoff weeks have 19 of these nights, so he misses games that his team plays. The rest days lower his playoff fit, so your bot bids less for him.
 - Injuries: in each simulated auction, each player misses each playoff week with the chance of his `inj_risk` tier (`missed_week`). The projected games already hold the average cost of injuries, so the simulator raises his production on the days that he plays by 1 / (1 − chance). His expected production stays the same. The draw changes the spread only: a core of high-risk players loses a whole week more often, and the face-offs show it in the title percent.
-- The first tier chances come from the games in `data/Projections.csv`: the share of the season that each tier misses. A player who is not in `data/projection_risk.csv` gets `missing_tier` (med).
+- The first tier chances come from the games in the newest projections file: the share of the season that each tier misses. A player who is not in `data/projection_risk.csv` gets `missing_tier` (med).
 
 ### Playoff face-offs
 
