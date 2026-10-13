@@ -34,20 +34,20 @@ def test_board_gets_every_column_from_build_rankings(monkeypatch):
     assert df.player.tolist() == ["A", "B ⚠"]
 
 
-def test_position_buttons_use_the_yahoo_order():
+def boxes(html, key):
+    """The values of the check boxes in one drop-down. Select all must come first and be on."""
+    part = html.split(f'data-dd="{key}"')[1].split("</details>")[0]
+    assert part.index("data-all checked") < part.index('value="')
+    return re.findall(r'<input type="checkbox" value="([^"]*)" checked>', part)
+
+
+def test_position_list_uses_the_yahoo_order():
+    assert boxes(filter_bar(DF), "pos") == ["PG", "SG", "SF", "PF", "C"]
+
+
+def test_flag_lists_give_green_gray_yellow_for_s_and_q():
     html = filter_bar(DF)
-    assert re.findall(r'data-pos="(\w+)"', html) == ["PG", "SG", "SF", "PF", "C"]
-
-
-def test_team_options_are_sorted_with_no_team_last():
-    html = filter_bar(DF)
-    assert re.findall(r'<option value="([^"]*)"', html) == ["", "BOS", "NYK", "—"]
-
-
-def test_flag_buttons_give_green_gray_yellow_for_s_and_q():
-    html = filter_bar(DF)
-    assert re.findall(r'data-flag="(\w)" data-grade="(\w+)"', html) == [
-        ("s", "good"), ("s", "avg"), ("s", "warn"), ("q", "good"), ("q", "avg"), ("q", "warn")]
+    assert boxes(html, "s") == boxes(html, "q") == ["good", "avg", "warn"]
 
 
 def test_row_gives_flags_to_the_filter_bar():
@@ -163,18 +163,6 @@ def test_board_has_the_core_combos_tab_only_when_the_simulator_has_run(monkeypat
     assert "<details" in html and "Strong groups" not in html
 
 
-def test_risk_column_shows_the_tier_and_sorts_a_missing_tier_last():
-    cfg = {"weights": {"pts": 1.0}, "board": {"low_games": 60},
-           "flags": {"good_quality_games": 3, "poor_quality_games": 1}}
-    cols = {h: fn for h, _, _, fn in draft_board.html_columns(cfg)}
-    assert list(cols)[list(cols).index("Games"):][:2] == ["Games", "Risk"]
-    assert cols["Risk"](pd.Series({"inj_risk": "low"})).endswith('>low</td>')
-    assert "var(--good)" in cols["Risk"](pd.Series({"inj_risk": "low"}))
-    assert 'data-v="3"' in cols["Risk"](pd.Series({"inj_risk": "extreme"}))
-    assert "var(--bad)" in cols["Risk"](pd.Series({"inj_risk": "extreme"}))
-    assert cols["Risk"](pd.Series({"inj_risk": float("nan")})) == '<td data-v="-1">—</td>'
-
-
 def test_s_flag_note_says_when_the_player_rests_on_back_to_backs(monkeypatch):
     cfg = {"weights": {"pts": 1.0}, "board": {"low_games": 60},
            "flags": {"good_playoff_games": 11, "poor_playoff_games": 9,
@@ -238,8 +226,8 @@ def test_markdown_board_has_no_team_builder_columns(monkeypatch, tmp_path):
                         sched_score=1.0, games_wk="4-4-4", quality_wk="1-1-1", games=70, inj_risk="low", stats="20.0")
     draft_board.write_markdown(df, cfg)
     md = (tmp_path / "draft_board.md").read_text(encoding="utf-8")
-    assert ("| Rank | Player | Flags | Team | Pos | $ | League $ | Diff | Sched | Playoff games | Quality games "
-            "| Games | Risk | Stats |") in md
+    assert ("| Rank | Player | Flags | Team | Pos | $ | League $ | Diff | Sched | Playoffs | Quality "
+            "| Games | Stats |") in md
     assert "Fit" not in md and "team-data" not in md
 
 
@@ -250,6 +238,22 @@ def test_each_board_row_has_an_add_button_and_a_taken_button():
     assert 'aria-label="Mark Tyrese Maxey taken"' in cell
 
 
-def test_filter_bar_has_fit_buttons_for_each_color_and_for_a_hole():
+def test_filter_bar_has_a_fit_list_for_each_color_before_the_flag_lists():
     bar = filter_bar(pd.DataFrame({"team": ["BOS"]}))
-    assert re.findall(r'data-fit="(\w+)"', bar) == ["good", "warn", "bad", "hole"]
+    assert boxes(bar, "fit") == ["good", "warn", "bad"]
+    assert bar.index('data-dd="fit"') < bar.index('data-dd="s"') and 'data-dd="team"' not in bar
+
+
+
+def test_other_playoff_windows_get_their_own_page_and_label():
+    week = lambda n, d: {"name": f"wk{n}", "start": d, "end": d}
+    cfg = {"playoffs": {"weeks": [week(19, 1), week(21, 3)], "other_windows": [[week(20, 2), week(22, 4)]]}}
+    cfgs = draft_board.windows(cfg)
+    assert [draft_board.weeks(c) for c in cfgs] == [["wk19", "wk21"], ["wk20", "wk22"]]
+    assert cfg["playoffs"]["weeks"][0]["name"] == "wk19"  # the main config does not change
+    pages = draft_board.pages(cfgs)
+    assert pages == [("Weeks 19–21", "draft_board.html"), ("Weeks 20–22", "draft_board_wk20-wk22.html")]
+    bar = draft_board.tab_bar(None, pages, "draft_board_wk20-wk22.html")
+    assert 'id="keeper"' not in bar and 'data-tab=' not in bar
+    assert '<option value="draft_board_wk20-wk22.html" selected>Weeks 20–22</option>' in bar
+    assert draft_board.tab_bar(None, pages[:1]) == ""

@@ -13,6 +13,14 @@ def load_config():
     return tomllib.loads((ROOT / "config.toml").read_text(encoding="utf-8"))
 
 
+def latest_projections(cfg):
+    """Newest projections file. The pattern in config.toml ends in a date (Projections_2026-10-12.csv), so the last name is the newest."""
+    files = sorted(ROOT.glob(cfg["league"]["projections"]))
+    if not files:
+        raise FileNotFoundError(f"No projections file matches {cfg['league']['projections']}")
+    return files[-1]
+
+
 def weeks(cfg):
     """Names of the playoff weeks, for example ["wk19", "wk20", "wk21"]. Each name is a column in rankings.csv."""
     return [w["name"] for w in cfg["playoffs"]["weeks"]]

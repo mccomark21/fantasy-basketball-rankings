@@ -171,7 +171,7 @@ def test_fit_for_500_players_takes_less_than_100_ms():
 def real():
     """(page data, Playoffs) from data/. Skips when the data files are not there."""
     cfg = load_config()
-    if not (DATA / "schedule.csv").exists() or not (ROOT / cfg["league"]["projections"]).exists():
+    if not (DATA / "schedule.csv").exists() or not list(ROOT.glob(cfg["league"]["projections"])):
         pytest.skip("data/schedule.csv or the projections file is missing")
     from playoffs import playoff_schedule, read_schedule
     from rankings import build_rankings

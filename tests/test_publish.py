@@ -66,3 +66,11 @@ def test_main_branch_and_working_tree_do_not_change(repo):
 def test_missing_board_stops_with_an_error(repo):
     with pytest.raises(FileNotFoundError, match="draft_board.py"):
         publish(repo, repo / "output" / "draft_board.html")
+
+
+def test_other_playoff_window_pages_keep_their_names(repo):
+    other = repo / "output" / "draft_board_wk20-wk22.html"
+    main = board(repo, "<p>board</p>")
+    other.write_text("<p>wk20</p>")
+    publish(repo, main, [other])
+    assert remote_pages(repo) == {".nojekyll": "", "draft_board_wk20-wk22.html": "<p>wk20</p>", "index.html": "<p>board</p>"}
