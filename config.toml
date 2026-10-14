@@ -69,7 +69,7 @@ stl = 0.50
 # See scripts/benchmark.py.
 [category_balance]
 top_teams = 4              # teams averaged for the benchmark
-band = 0.5                 # the "even" band, in weighted z-score
+band_pct = 0.05            # the "even" band: this share of the weekly benchmark of each category
 games_per_week = 3.5       # games of one player in one week (docs/category_weights.md). Weekly totals only
 # Last season (2025-26, 19 weeks, 14 teams): the mean of the 4 best teams / the mean of all teams, minus 1.
 # The best teams are the top 4 by weighted z-score of the team totals. Your own team is one of them.

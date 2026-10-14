@@ -1,7 +1,7 @@
 // Category need engine: the category gaps of your core and the Need of a candidate (issue #39, Filler and Contracts).
 //
 //   1. Core total = the sum of wz (weighted z-score) over the core players and the fillers, for each category.
-//   2. Gap = max(0, benchmark - core total). Label: behind, even or ahead (data.category.band).
+//   2. Gap = max(0, benchmark - core total). Label: behind, even or ahead (data.category.bands, one value for each category).
 //   3. Each empty core spot gets a filler. Its price is the core budget left, divided by the empty core spots.
 //      The filler is the row of data.category.filler_curve with the nearest price. The engine clamps the price.
 //   4. Need = sum of gaps before - sum of gaps after, when the candidate joins the core at his price.
@@ -57,8 +57,9 @@ const CategoryNeed = (() => {
     }
     for (const c of cat.cats) {
       const gap = Math.max(0, cat.benchmark[c] - totals[c]);
+      const band = cat.bands[c];
       gaps[c] = gap;
-      labels[c] = gap >= cat.band ? "behind" : totals[c] < cat.benchmark[c] + cat.band ? "even" : "ahead";
+      labels[c] = gap >= band ? "behind" : totals[c] < cat.benchmark[c] + band ? "even" : "ahead";
     }
     return { totals, gaps, labels, filler_price: filler.price };
   }

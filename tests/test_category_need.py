@@ -55,7 +55,7 @@ def curve():
 
 def data(benchmark=None):
     return {"budget": 200, "spots": 10, "category": {
-        "cats": CATS, "benchmark": benchmark or wz(pts=10.0, blk=8.0), "core_size": 7, "min_bid": 1, "band": 0.5,
+        "cats": CATS, "benchmark": benchmark or wz(pts=10.0, blk=8.0), "core_size": 7, "min_bid": 1, "bands": {c: 0.5 for c in CATS},
         "filler_curve": curve()}}
 
 
@@ -149,3 +149,13 @@ def test_speed_500_candidates():
     out = engine(data(), roster, cands)
     print(f"need x 500: {out['ms']:.2f} ms")
     assert out["ms"] < 100
+
+
+def test_each_category_has_its_own_band():
+    roster = [pick(f"p{i}", 20) for i in range(7)]
+    roster[0]["player"]["wz"].update(pts=9.0, reb=9.0)
+    d = data(wz(pts=10.0, reb=10.0, ast=0.0, threes=0.0, stl=0.0, blk=0.0))
+    d["category"]["bands"].update(pts=0.5, reb=2.0)
+    labels = engine(d, roster)["gap"]["labels"]
+    assert labels["pts"] == "behind"  # gap 1.0 is more than the band 0.5
+    assert labels["reb"] == "even"  # gap 1.0 is less than the band 2.0

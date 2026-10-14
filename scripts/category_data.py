@@ -48,6 +48,21 @@ def calibrate(benchmark, df, cfg):
     return {cat: round(max(benchmark[cat], real[cat]), 3) for cat in benchmark}
 
 
+def bands(benchmark, df, cfg):
+    """The "even" band of each category in wz: band_pct of the weekly benchmark, turned into wz.
+
+    A change of s per game in the team total is s / std in z and weight x s / std in wz.
+    """
+    cb, per_game = cfg.get("category_balance", {}), units(df, cfg)
+    pct, n = cb.get("band_pct", 0.05), cfg["simulation"]["core"]
+    out = {}
+    for cat, wz in benchmark.items():
+        mean, std = per_game[cat]["mean"], per_game[cat]["std"]
+        per_game_total = n * mean + std * wz / cfg["weights"][cat]
+        out[cat] = round(cfg["weights"][cat] * pct * per_game_total / std, 3)
+    return out
+
+
 def category_data(df, cfg, benchmark):
     """(category, wz): the "category" object of the page data and the wz of each player.
 
@@ -63,7 +78,7 @@ def category_data(df, cfg, benchmark):
     wz = pd.DataFrame({cat: df["z_" + cat] * weights[cat] for cat in cats})
     category = {"cats": cats, "benchmark": {cat: round(float(benchmark[cat]), 3) for cat in cats},
                 "core_size": cfg["simulation"]["core"], "min_bid": cfg["auction"]["min_bid"],
-                "band": cfg.get("category_balance", {}).get("band", 0.5),
+                "bands": bands(benchmark, df, cfg),
                 "games_per_week": cfg.get("category_balance", {}).get("games_per_week", 3.5),
                 "weights": {cat: weights[cat] for cat in cats}, "units": units(df, cfg),
                 "filler_curve": filler_curve(df, wz, cfg["auction"]["min_bid"])}

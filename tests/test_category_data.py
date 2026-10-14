@@ -5,11 +5,11 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-from category_data import calibrate, category_data, load_benchmark, units  # noqa: E402
+from category_data import bands, calibrate, category_data, load_benchmark, units  # noqa: E402
 
 CATS = ["pts", "reb", "ast", "threes", "stl", "blk"]
 CFG = {"weights": {"pts": 1.0, "reb": 1.0, "ast": 1.0, "threes": 0.7, "blk": 0.65, "stl": 0.5},
-       "simulation": {"core": 7}, "auction": {"min_bid": 1}, "category_balance": {"band": 0.5}}
+       "simulation": {"core": 7}, "auction": {"min_bid": 1}, "category_balance": {"band_pct": 0.05, "games_per_week": 3.5}}
 BENCHMARK = {cat: 1.5 for cat in CATS}
 
 
@@ -39,11 +39,12 @@ def test_without_a_benchmark_there_is_no_category_and_no_wz():
 
 def test_the_category_object_has_the_shape_of_the_contract():
     category, wz = category_data(league(), CFG, BENCHMARK)
-    assert list(category) == ["cats", "benchmark", "core_size", "min_bid", "band", "games_per_week", "weights",
+    assert list(category) == ["cats", "benchmark", "core_size", "min_bid", "bands", "games_per_week", "weights",
                               "units", "filler_curve"]
     assert category["cats"] == CATS
     assert category["benchmark"] == BENCHMARK
-    assert (category["core_size"], category["min_bid"], category["band"]) == (7, 1, 0.5)
+    assert (category["core_size"], category["min_bid"]) == (7, 1)
+    assert list(category["bands"]) == CATS
     assert [e["price"] for e in category["filler_curve"]] == list(range(1, 61))
     assert all(list(e["wz"]) == CATS for e in category["filler_curve"])
     assert len(wz) == 150 and list(wz[0]) == CATS
@@ -92,10 +93,17 @@ def test_without_a_lift_the_benchmark_does_not_change():
 
 def test_a_category_takes_the_higher_of_the_simulator_and_the_real_level():
     lift = {cat: 0.2 for cat in CATS}
-    cfg = {**CFG, "category_balance": {"band": 0.5, "last_season_lift": lift}}
+    cfg = {**CFG, "category_balance": {"band_pct": 0.05, "last_season_lift": lift}}
     # Real level in wz: weight x 7 players x mean 10 x lift 0.2 / std 2 = weight x 7
     low = {cat: 0.0 for cat in CATS}
     got = calibrate(low, league(), cfg)
     assert got["pts"] == pytest.approx(7.0) and got["threes"] == pytest.approx(4.9) and got["stl"] == pytest.approx(3.5)
     high = {cat: 99.0 for cat in CATS}
     assert calibrate(high, league(), cfg) == high
+
+
+def test_a_band_is_a_share_of_the_weekly_benchmark():
+    # Benchmark wz 0 = the average core: 7 players x mean 10 = 70 per game. 5% of that is 3.5 per game.
+    # As wz: weight x 3.5 / std 2 = weight x 1.75.
+    got = bands({cat: 0.0 for cat in CATS}, league(), CFG)
+    assert got["pts"] == pytest.approx(1.75) and got["threes"] == pytest.approx(1.225)
