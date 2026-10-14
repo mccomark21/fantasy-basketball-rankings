@@ -16,7 +16,8 @@ Team score: the playoff score of your core and your streamers (team_score.py), a
 In each run, each player misses playoff weeks with the chance of his injury tier and rests on back-to-backs
 (team_score.Playoffs.draw). Then the top teams play the playoff weeks head to head (matchups.py).
 Output: for each keeper in config.toml [simulation], your title percent, your playoff results and the players that
-you win most. The auctions run in parallel, one process for each CPU core.
+you win most. Also output/category_benchmark.csv, the category benchmark of the strong teams (benchmark.py).
+The auctions run in parallel, one process for each CPU core.
 """
 import os
 from concurrent.futures import ProcessPoolExecutor
@@ -25,6 +26,7 @@ from itertools import repeat
 import numpy as np
 import pandas as pd
 
+from benchmark import CATS, has_z, run_benchmark
 from common import OUT, load_config
 from matchups import face_offs
 from playoffs import playoff_schedule, read_schedule
@@ -154,6 +156,7 @@ def _auctions(pool, cfg, keeper, runs, rng, playoffs):
     """(scores, mine): the scores of simulate() and the players that you buy in each run.
 
     mine has name, price, run (the row of scores) and core (True for the keeper and your core players).
+    If pool has the z_<cat> columns, scores also has bench_<cat>: the category benchmark of the run (benchmark.py).
     """
     players = pool.set_index("name")
     scores, sales = [], []
@@ -162,6 +165,8 @@ def _auctions(pool, cfg, keeper, runs, rng, playoffs):
         mine = sold.query("team == 0").assign(run=run)
         mine["core"] = np.arange(len(mine)) < cfg["simulation"]["core"]  # the same core as _core()
         score = {"dollars": players.dollars[mine.name].sum()}
+        if has_z(pool, cfg):
+            score.update(run_benchmark(sold, pool, cfg).add_prefix("bench_"))
         if playoffs is not None:
             cores = [_core(players, sold.name[sold.team == t], t, cfg) for t in range(cfg["league"]["teams"])]
             drawn = [playoffs.draw(core.to_dict("records"), rng) for core in cores]
@@ -193,8 +198,9 @@ def main():
     sim = cfg["simulation"]
     rankings = build_rankings(cfg)
     players, playoffs = make_playoffs(rankings, playoff_schedule(read_schedule(), cfg)[1], cfg)
+    z = ["z_" + cat for cat in cfg["weights"]]
     pool = players[["name", "pos", "dollars", "league_price", "yahoo_cost", "team", "prod", "stats", "value",
-                    "inj_risk", "rests_b2b"]]
+                    "inj_risk", "rests_b2b", *z]]
     missing = sorted((set(sim["keepers"]) | set(sim.get("other_keepers", []))) - set(pool.name) - {NO_KEEPER})
     if missing:
         raise SystemExit(f"The rankings do not have these keepers: {', '.join(missing)}. "
@@ -205,7 +211,7 @@ def main():
     # keeper sees the same random numbers, and the comparison is fair.
     parts = [len(part) for part in np.array_split(np.arange(sim["runs"]), CHUNKS)]
     starts = np.cumsum([0, *parts[:-1]])  # the first run number of each part
-    summary, all_runs = {}, []
+    summary, all_runs, benches = {}, [], []
     with ProcessPoolExecutor(os.cpu_count()) as executor:
         for keeper in sim["keepers"]:
             seeds = np.random.SeedSequence(sim["seed"]).spawn(CHUNKS)
@@ -213,6 +219,9 @@ def main():
             results = list(executor.map(_auctions, repeat(pool), repeat(cfg), repeat(kept), parts,
                                         [np.random.default_rng(seed) for seed in seeds], repeat(playoffs)))
             scores = pd.concat([r[0] for r in results], ignore_index=True)
+            bench = scores.filter(like="bench_")
+            benches.append(bench)
+            scores = scores.drop(columns=bench.columns)
             mine = pd.concat([r[1].assign(run=r[1].run + start) for r, start in zip(results, starts)])
             won = _wins(mine[mine.name != keeper], sim["runs"])
             all_runs.append(mine.join(scores, on="run").rename(columns={"name": "player"}).assign(keeper=keeper))
@@ -235,6 +244,7 @@ def main():
     summary = pd.DataFrame(summary).T.rename_axis("keeper")
     print(summary.round(1).to_string())
     write_results(summary, pd.concat(all_runs, ignore_index=True), players)
+    write_benchmark(pd.concat(benches, ignore_index=True))
 
 
 def write_results(summary, runs, players):
@@ -251,6 +261,17 @@ def write_results(summary, runs, players):
     runs[cols].rename(columns={"playoff": "playoff_score"}).round(2).to_csv(OUT / "simulation_runs.csv", index=False)
     print("\nWrote simulation_summary.csv, simulation_players.csv, simulation_groups.csv and simulation_runs.csv "
           f"to {OUT}")
+
+
+def write_benchmark(bench):
+    """Write category_benchmark.csv to output/: one row, the mean of bench over all runs and all keepers.
+
+    bench has the bench_<cat> columns, one row for each auction. The file has one column for each category in CATS.
+    """
+    OUT.mkdir(exist_ok=True)
+    mean = bench.mean().rename(lambda c: c.removeprefix("bench_"))
+    pd.DataFrame([mean[CATS]]).round(3).to_csv(OUT / "category_benchmark.csv", index=False)
+    print(f"Wrote category_benchmark.csv to {OUT}")
 
 
 if __name__ == "__main__":

@@ -65,6 +65,12 @@ threes = 0.70
 blk = 0.65
 stl = 0.50
 
+# Category balance: the benchmark is the weighted z-score of the strong teams in the simulator.
+# See scripts/benchmark.py.
+[category_balance]
+top_teams = 4              # teams averaged for the benchmark
+band = 0.5                 # the "even" band, in weighted z-score
+
 [games]
 # Games played is a multiplier on per-game value above replacement:
 #   availability = (projected games / full_season) ^ power
