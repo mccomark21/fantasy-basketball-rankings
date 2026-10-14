@@ -70,6 +70,11 @@ stl = 0.50
 [category_balance]
 top_teams = 4              # teams averaged for the benchmark
 band = 0.5                 # the "even" band, in weighted z-score
+games_per_week = 3.5       # games of one player in one week (docs/category_weights.md). Weekly totals only
+# Last season (2025-26, 19 weeks, 14 teams): the mean of the 4 best teams / the mean of all teams, minus 1.
+# The best teams are the top 4 by weighted z-score of the team totals. Your own team is one of them.
+# The benchmark in each category is the higher of the simulator value and the value that this lift gives.
+last_season_lift = { pts = 0.155, reb = 0.182, ast = 0.162, threes = 0.057, stl = 0.124, blk = 0.302 }
 
 [games]
 # Games played is a multiplier on per-game value above replacement:

@@ -2,8 +2,11 @@
 
   wz: the weighted z-score of a player in one category: z_<cat> x weights[cat].
   filler_curve: for each price, the mean wz of the players whose dollars are closest to that price.
-  benchmark: the file output/category_benchmark.csv (scripts/benchmark.py writes it).
+  benchmark: the file output/category_benchmark.csv (scripts/benchmark.py writes it), raised in each category
+    to the level that the real top teams of last season had (calibrate).
+  units: the per-game mean and standard deviation of the pool in each category. They turn wz into weekly stats.
 """
+import numpy as np
 import pandas as pd
 
 from common import OUT
@@ -22,6 +25,29 @@ def load_benchmark(path=BENCHMARK_FILE):
     return {cat: round(float(value), 3) for cat, value in row.items()}
 
 
+def units(df, cfg):
+    """For each category: the per-game mean and standard deviation of the pool. z_<cat> = (stat - mean) / std."""
+    out = {}
+    for cat in cfg["weights"]:
+        std, mean = np.polyfit(df["z_" + cat], df[cat], 1)
+        out[cat] = {"mean": round(float(mean), 3), "std": round(float(std), 3)}
+    return out
+
+
+def calibrate(benchmark, df, cfg):
+    """The benchmark, with each category raised to the real level when that is higher.
+
+    The real level is the average core of core_size players x (1 + last_season_lift). In wz, with a core of n:
+    weight x n x mean x lift / std. Without last_season_lift in the config, the benchmark does not change.
+    """
+    lift = cfg.get("category_balance", {}).get("last_season_lift")
+    if not lift:
+        return benchmark
+    n, per_game = cfg["simulation"]["core"], units(df, cfg)
+    real = {cat: cfg["weights"][cat] * n * per_game[cat]["mean"] * lift[cat] / per_game[cat]["std"] for cat in benchmark}
+    return {cat: round(max(benchmark[cat], real[cat]), 3) for cat in benchmark}
+
+
 def category_data(df, cfg, benchmark):
     """(category, wz): the "category" object of the page data and the wz of each player.
 
@@ -33,10 +59,13 @@ def category_data(df, cfg, benchmark):
     cats, weights = list(benchmark), cfg["weights"]
     if set(cats) != set(weights):
         raise ValueError(f"The benchmark has the categories {cats}. The weights have {list(weights)}.")
+    benchmark = calibrate(benchmark, df, cfg)
     wz = pd.DataFrame({cat: df["z_" + cat] * weights[cat] for cat in cats})
     category = {"cats": cats, "benchmark": {cat: round(float(benchmark[cat]), 3) for cat in cats},
                 "core_size": cfg["simulation"]["core"], "min_bid": cfg["auction"]["min_bid"],
                 "band": cfg.get("category_balance", {}).get("band", 0.5),
+                "games_per_week": cfg.get("category_balance", {}).get("games_per_week", 3.5),
+                "weights": {cat: weights[cat] for cat in cats}, "units": units(df, cfg),
                 "filler_curve": filler_curve(df, wz, cfg["auction"]["min_bid"])}
     return category, [{cat: round(float(v), 3) for cat, v in row.items()} for _, row in wz.iterrows()]
 
