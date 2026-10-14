@@ -107,3 +107,10 @@ def test_a_band_is_a_share_of_the_weekly_benchmark():
     # As wz: weight x 3.5 / std 2 = weight x 1.75.
     got = bands({cat: 0.0 for cat in CATS}, league(), CFG)
     assert got["pts"] == pytest.approx(1.75) and got["threes"] == pytest.approx(1.225)
+
+
+def test_the_scale_multiplies_the_per_game_team_total():
+    cfg = {**CFG, "category_balance": {"band_pct": 0.05, "benchmark_scale": 0.9}}
+    # wz 0 = total 70 per game (7 x mean 10). 90% = 63 = 70 + 2 x z, so z = -3.5 and wz = -3.5 x weight
+    got = calibrate({cat: 0.0 for cat in CATS}, league(), cfg)
+    assert got["pts"] == pytest.approx(-3.5) and got["threes"] == pytest.approx(-2.45)

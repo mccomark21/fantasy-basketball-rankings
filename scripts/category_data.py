@@ -38,14 +38,21 @@ def calibrate(benchmark, df, cfg):
     """The benchmark, with each category raised to the real level when that is higher.
 
     The real level is the average core of core_size players x (1 + last_season_lift). In wz, with a core of n:
-    weight x n x mean x lift / std. Without last_season_lift in the config, the benchmark does not change.
+    weight x n x mean x lift / std. Then benchmark_scale (default 1) multiplies the per-game team total of each
+    category. Without last_season_lift and benchmark_scale in the config, the benchmark does not change.
     """
-    lift = cfg.get("category_balance", {}).get("last_season_lift")
-    if not lift:
+    cb = cfg.get("category_balance", {})
+    lift, scale = cb.get("last_season_lift"), cb.get("benchmark_scale", 1.0)
+    if not lift and scale == 1.0:
         return benchmark
     n, per_game = cfg["simulation"]["core"], units(df, cfg)
-    real = {cat: cfg["weights"][cat] * n * per_game[cat]["mean"] * lift[cat] / per_game[cat]["std"] for cat in benchmark}
-    return {cat: round(max(benchmark[cat], real[cat]), 3) for cat in benchmark}
+    if lift:
+        real = {cat: cfg["weights"][cat] * n * per_game[cat]["mean"] * lift[cat] / per_game[cat]["std"] for cat in benchmark}
+        benchmark = {cat: max(benchmark[cat], real[cat]) for cat in benchmark}
+    # team total per game = n x mean + std x wz / weight. Scale it, then turn it back into wz.
+    scaled = {cat: cfg["weights"][cat] * ((scale - 1) * n * per_game[cat]["mean"] / per_game[cat]["std"]
+                                          + scale * benchmark[cat] / cfg["weights"][cat]) for cat in benchmark}
+    return {cat: round(v, 3) for cat, v in scaled.items()}
 
 
 def bands(benchmark, df, cfg):
