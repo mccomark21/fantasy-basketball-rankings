@@ -456,6 +456,7 @@ def team_data(df, days, cfg, benchmark=None):
         {"date": f"{d.date:%Y-%m-%d}", "week": d.week, "nba_games": int(d.nba_games), "quality": bool(d.quality),
          "teams": list(d.teams), "b2b": list(d.b2b)} for d in days.itertuples()]
     return {"slots": list(slots), "util": 1, "budget": cfg["auction"]["budget"], "spots": cfg["auction"]["spots"],
+            "keeper_prices": cfg.get("simulation", {}).get("keeper_prices", {}),
             "core_max_rank": tb.get("core_max_rank", 75), "weak_week_started": tb.get("weak_week_started", 0),
             "weeks": weeks(cfg), "days": day_list, "players": players, "category": category}
 
@@ -942,11 +943,11 @@ const lastName = name => name.split(" ").slice(1).join(" ") || name;
 const money = v => v == null ? "—" : `$${Math.round(v)}`;
 const sameId = (a, b) => String(a) === String(b);
 
-// Your team: the keeper first (price = league_price, no ×), then the picks
+// Your team: the keeper first (price = keeper_prices, else league_price; no ×), then the picks
 function myTeam() {
   const k = keeper ? byName.get(keeper.value) : undefined;
   const rows = picks.filter(t => !k || !sameId(t.id, k.id)).map(t => ({...t, player: byId.get(String(t.id))}));
-  return k ? [{id: k.id, price: k.league_price ?? 0, core: keeperCore, keeper: true, player: k}, ...rows] : rows;
+  return k ? [{id: k.id, price: data.keeper_prices?.[k.name] ?? k.league_price ?? 0, core: keeperCore, keeper: true, player: k}, ...rows] : rows;
 }
 const isCore = t => t.core ?? t.player.rank <= data.core_max_rank;
 

@@ -27,22 +27,12 @@ runs = 2000                # auctions for each keeper (about 5 minutes on 16 CPU
 noise = 0.20               # spread of the random noise on each bot bid and on the nomination order (lognormal sigma)
 seed = 1                   # the same seed gives the same results
 # Your keeper candidates. The simulator runs each one as your keeper and compares the results.
-# Keeper cost = league_price. "No keeper" = keep no one.
+# Keeper cost = keeper_prices, else league_price. "No keeper" = keep no one.
 keepers = ["Cooper Flagg"]  # confirmed 2026-10-14
+keeper_prices = { "Cooper Flagg" = 61 }  # the real keeper prices that the league gives
 # Players that other teams keep. Each goes to a bot team at league_price and takes one of its spots.
-# Confirmed 2026-10-14. Two teams keep no one. One team's keeper is not known yet.
-other_keepers = [
-  "Karl-Anthony Towns",
-  "Cade Cunningham",
-  "Kon Knueppel",
-  "Amen Thompson",
-  "Giannis Antetokounmpo",
-  "Victor Wembanyama",
-  "Domantas Sabonis",
-  "Nikola Jokic",
-  "Shai Gilgeous-Alexander",
-  "Jalen Brunson",
-]
+# Empty for now: the teams are changing their keepers (2026-10-15).
+other_keepers = []
 # Your strategy: buy core players, then pay min_bid for each other spot and use those spots for streamers.
 core = 7
 # Your bid for a core player = dollars x (1 - playoff_weight + playoff_weight x fit). fit = what the player

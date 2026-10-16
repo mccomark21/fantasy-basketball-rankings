@@ -186,7 +186,7 @@ def test_page_has_one_team_data_block_with_the_contract_keys(monkeypatch, tmp_pa
     blocks = re.findall(r'<script type="application/json" id="team-data">(.*?)</script>', html, re.S)
     assert len(blocks) == 1
     data = json.loads(blocks[0])
-    assert list(data) == ["slots", "util", "budget", "spots", "core_max_rank", "weak_week_started", "weeks", "days",
+    assert list(data) == ["slots", "util", "budget", "spots", "keeper_prices", "core_max_rank", "weak_week_started", "weeks", "days",
                           "players", "category"]
     assert data["category"] is None and "wz" not in data["players"][0]  # no benchmark file
     assert (data["util"], data["budget"], data["spots"]) == (1, 200, 10)

@@ -38,12 +38,17 @@ CHUNKS = 64  # parts of the auctions for the parallel run
 NO_KEEPER = "No keeper"  # a keeper option in config.toml: you keep no one and start the auction with all your spots
 
 
+def keeper_price(name, league_price, cfg):
+    """The keeper price of a player: [simulation] keeper_prices, else league_price (rounded)."""
+    return cfg["simulation"].get("keeper_prices", {}).get(name, round(league_price))
+
+
 def run_auction(pool, cfg, rng, keeper=None, playoffs=None):
     """One auction. Returns one row for each player sold: name, team and price.
 
     pool needs name, pos, dollars, league_price and yahoo_cost. A missing price is $0.
-    keeper is the name of your keeper. He is the first row, and his price is league_price (rounded).
-    The players in [simulation] other_keepers go to the bot teams 1, 2, ... at league_price before the auction.
+    keeper is the name of your keeper. He is the first row, and his price is keeper_price().
+    The players in [simulation] other_keepers go to the bot teams 1, 2, ... at keeper_price() before the auction.
     playoffs is a team_score.Playoffs. With it, your bid uses the playoff fit, and pool also needs team and prod.
     rests_b2b is optional: with it, the fit counts the rest days of a player who rests on back-to-backs.
     """
@@ -64,7 +69,7 @@ def run_auction(pool, cfg, rng, keeper=None, playoffs=None):
         if name is None:
             continue
         kept = next(pool[pool.name == name].itertuples())
-        price = round(kept.league_price)
+        price = keeper_price(name, kept.league_price, cfg)
         rosters[team].append(kept.positions)
         if team == 0:
             core.append(_player(kept, playoffs))
@@ -225,7 +230,7 @@ def main():
             mine = pd.concat([r[1].assign(run=r[1].run + start) for r, start in zip(results, starts)])
             won = _wins(mine[mine.name != keeper], sim["runs"])
             all_runs.append(mine.join(scores, on="run").rename(columns={"name": "player"}).assign(keeper=keeper))
-            summary[keeper] = {"cost": 0 if kept is None else round(pool.set_index("name").league_price[keeper]),
+            summary[keeper] = {"cost": 0 if kept is None else keeper_price(keeper, pool.set_index("name").league_price[keeper], cfg),
                                "title_pct": 100 * scores.title.mean(),
                                "playoffs_pct": 100 * scores.made_playoffs.mean(),
                                "rr_win_pct": scores.rr_win_pct.mean(),
