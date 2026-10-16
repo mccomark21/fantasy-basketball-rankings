@@ -1,10 +1,13 @@
 import json
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 import draft_board  # noqa: E402
@@ -126,19 +129,20 @@ def test_combo_cells_give_the_positions_prices_and_games_of_the_combo():
 
 
 PAGE_CFG = {**CFG, "weights": {"pts": 1.0}, "board": {"low_games": 60},
-            "league": {"teams": 14, "slots": ["PG", "SG", "SF", "PF", "C"]}, "auction": {"budget": 200, "spots": 10}}
+            "league": {"teams": 14, "slots": ["PG", "SG", "SF", "PF", "C"]}, "auction": {"budget": 200, "spots": 10, "min_bid": 1},
+            "simulation": {"core": 7}, "category_balance": {"band_pct": 0.05, "games_per_week": 3.5}}
 PAGE_DF = pd.DataFrame({"name": ["A", "B"], "pos": ["C", "PG/SG"], "team": ["DEN", "—"], "no_team": [False, True],
                         "player_id": [3930, 7], "rank": [1, 2], "value": [9.4612, 3.2], "rests_b2b": [0, 1],
-                        "dollars": [10.0, 3.0], "league_price": [12.4, float("nan")],
+                        "dollars": [10.0, 3.0], "pts": [20.0, 10.0], "z_pts": [1.0, -1.0], "league_price": [12.4, float("nan")],
                         "wk19": [4, 0], "wk20": [4, 0], "wk21": [4, 0], "q_wk19": [1, 0], "q_wk20": [1, 0], "q_wk21": [1, 0]})
 
 
-def write_page(monkeypatch, tmp_path, sim=None, days=None):
+def write_page(monkeypatch, tmp_path, sim=None, days=None, benchmark=None):
     """The HTML page for PAGE_DF, with no board table and no filter bar."""
     monkeypatch.setattr(draft_board, "OUT", tmp_path)
-    monkeypatch.setattr(draft_board, "html_table", lambda df, cfg: "")
+    monkeypatch.setattr(draft_board, "html_table", lambda df, cfg, need=False: "")
     monkeypatch.setattr(draft_board, "filter_bar", lambda df: "")
-    draft_board.write_html(PAGE_DF, PAGE_CFG, sim, days)
+    draft_board.write_html(PAGE_DF, PAGE_CFG, sim, days, benchmark=benchmark)
     return (tmp_path / "draft_board.html").read_text(encoding="utf-8")
 
 
@@ -182,8 +186,9 @@ def test_page_has_one_team_data_block_with_the_contract_keys(monkeypatch, tmp_pa
     blocks = re.findall(r'<script type="application/json" id="team-data">(.*?)</script>', html, re.S)
     assert len(blocks) == 1
     data = json.loads(blocks[0])
-    assert list(data) == ["slots", "util", "budget", "spots", "core_max_rank", "weak_week_started", "weeks", "days",
-                          "players"]
+    assert list(data) == ["slots", "util", "budget", "spots", "keeper_prices", "core_max_rank", "weak_week_started", "weeks", "days",
+                          "players", "category"]
+    assert data["category"] is None and "wz" not in data["players"][0]  # no benchmark file
     assert (data["util"], data["budget"], data["spots"]) == (1, 200, 10)
     # No [team_builder] in the config: the defaults
     assert (data["core_max_rank"], data["weak_week_started"]) == (75, 0)
@@ -257,3 +262,50 @@ def test_other_playoff_windows_get_their_own_page_and_label():
     assert 'id="keeper"' not in bar and 'data-tab=' not in bar
     assert '<option value="draft_board_wk20-wk22.html" selected>Weeks 20–22</option>' in bar
     assert draft_board.tab_bar(None, pages[:1]) == ""
+
+
+BENCHMARK = {"pts": 3.0}
+
+
+def test_page_data_has_the_category_object_and_wz_when_the_benchmark_is_given():
+    data = draft_board.team_data(PAGE_DF, None, PAGE_CFG, BENCHMARK)
+    cat = data["category"]
+    assert (cat["cats"], cat["core_size"], cat["min_bid"], cat["games_per_week"]) == (["pts"], 7, 1, 3.5)
+    assert {"benchmark", "bands", "weights", "units", "filler_curve"} <= set(cat) and "band" not in cat
+    assert (data["budget"], data["spots"]) == (200, 10)  # these stay at the top level
+    assert [p["wz"] for p in data["players"]] == [{"pts": 1.0}, {"pts": -1.0}]
+    assert draft_board.team_data(PAGE_DF, None, PAGE_CFG)["category"] is None
+
+
+def test_page_has_the_category_panel_and_the_need_column_only_with_the_benchmark(monkeypatch, tmp_path):
+    html = write_page(monkeypatch, tmp_path, benchmark=BENCHMARK)
+    assert 'id="cats"' in html and 'id="cats-note"' in html
+    assert "function renderCategory" in html and "function renderNeed" in html
+    html = write_page(monkeypatch, tmp_path)
+    assert 'id="cats"' not in html and "__CATEGORY" not in html
+    assert "const CategoryNeed" not in html  # the engine is inlined only with the benchmark
+
+
+def test_need_column_comes_next_to_fit_only_with_the_benchmark():
+    cfg = {"weights": {"pts": 1.0}, "board": {"low_games": 60}, "flags": {"good_quality_games": 3, "poor_quality_games": 1}}
+    heads = [h for h, *_ in draft_board.html_columns(cfg, need=True)]
+    assert heads[heads.index("Fit"):][:3] == ["Fit", "Need", "Fit $"]
+    assert "Need" not in [h for h, *_ in draft_board.html_columns(cfg)]
+    cell = dict((h, fn) for h, _, _, fn in draft_board.html_columns(cfg, need=True))["Need"](pd.Series(dtype=object))
+    assert cell == '<td class="need" data-v="-999"></td>'
+
+
+def test_inlined_category_engine_gives_the_gaps_of_a_half_full_roster(monkeypatch, tmp_path):
+    if shutil.which("node") is None:
+        pytest.skip("node is not on PATH")
+    html = write_page(monkeypatch, tmp_path, benchmark=BENCHMARK)
+    script = re.search(r"<script>\n// Category engine[^\n]*\n(.*?)</script>", html, re.S).group(1)
+    data = re.search(r'id="team-data">(.*?)</script>', html, re.S).group(1)
+    code = (f"const data = {data};\n{script}\n"
+            "const roster = [{player: data.players[0], price: 10, core: true}];\n"
+            "const r = categoryGap(roster, data), n = need(roster, {player: data.players[1], price: 3}, data);\n"
+            "process.stdout.write(JSON.stringify({r, n}));")
+    out = json.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True, encoding="utf-8").stdout)
+    assert set(out["r"]["totals"]) == set(out["r"]["labels"]) == {"pts"}
+    assert out["r"]["labels"]["pts"] in ("behind", "even", "ahead") and out["r"]["filler_price"] is not None
+    assert isinstance(out["n"]["need"], (int, float)) and set(out["n"]["gaps_after"]) == {"pts"}

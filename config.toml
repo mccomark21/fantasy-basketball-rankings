@@ -27,10 +27,12 @@ runs = 2000                # auctions for each keeper (about 5 minutes on 16 CPU
 noise = 0.20               # spread of the random noise on each bot bid and on the nomination order (lognormal sigma)
 seed = 1                   # the same seed gives the same results
 # Your keeper candidates. The simulator runs each one as your keeper and compares the results.
-# Keeper cost = league_price. "No keeper" = keep no one.
-keepers = ["No keeper", "Matas Buzelis", "Cooper Flagg", "Tyrese Maxey", "Darius Garland", "Scottie Barnes", "Paolo Banchero"]
+# Keeper cost = keeper_prices, else league_price. "No keeper" = keep no one.
+keepers = ["Cooper Flagg"]  # confirmed 2026-10-14
+keeper_prices = { "Cooper Flagg" = 61 }  # the real keeper prices that the league gives
 # Players that other teams keep. Each goes to a bot team at league_price and takes one of its spots.
-other_keepers = ["Domantas Sabonis"]  # Sabonis: shadymcgrady (Mike)
+# Empty for now: the teams are changing their keepers (2026-10-15).
+other_keepers = []
 # Your strategy: buy core players, then pay min_bid for each other spot and use those spots for streamers.
 core = 7
 # Your bid for a core player = dollars x (1 - playoff_weight + playoff_weight x fit). fit = what the player
@@ -64,6 +66,20 @@ ast = 1.00
 threes = 0.70
 blk = 0.65
 stl = 0.50
+
+# Category balance: the benchmark is the weighted z-score of the strong teams in the simulator.
+# See scripts/benchmark.py.
+[category_balance]
+top_teams = 4              # teams averaged for the benchmark
+band_pct = 0.05            # the "even" band: this share of the weekly benchmark of each category
+games_per_week = 3.5       # games of one player in one week (docs/category_weights.md). Weekly totals only
+# Last season (2025-26, 19 weeks, 14 teams): the mean of the 4 best teams / the mean of all teams, minus 1.
+# The best teams are the top 4 by weighted z-score of the team totals. Your own team is one of them.
+# The benchmark in each category is the higher of the simulator value and the value that this lift gives.
+# benchmark_scale: the share of that benchmark that the board asks for. At 1.0, a perfect $197 core clears it by 2%.
+# At 0.9 it clears it by 13%, so the target is reachable in a real auction.
+benchmark_scale = 0.9
+last_season_lift = { pts = 0.155, reb = 0.182, ast = 0.162, threes = 0.057, stl = 0.124, blk = 0.302 }
 
 [games]
 # Games played is a multiplier on per-game value above replacement:

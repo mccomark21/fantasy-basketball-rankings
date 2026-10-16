@@ -6,6 +6,7 @@ yellow = poor. A short playoff week shows a red X in place of both flags ([flags
 A player who rests on back-to-backs has fewer playoff games than his team (playoffs.join_teams()).
 The stat columns are the categories in [weights]. Positions are the Yahoo positions.
 The HTML page also has the team builder (#8): the team bar, the + and Fit columns and the My team tab.
+With the category benchmark (#39) it also has the category panel above the team table and the Need column.
 """
 import copy
 import json
@@ -15,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from category_data import category_data, load_benchmark
 from common import OUT, load_config, weeks
 from playoffs import playoff_schedule, read_schedule
 from rankings import build_rankings
@@ -154,8 +156,11 @@ def td(text, v=None, style=None, title=None, cls=None):
     return f"<td{attrs}>{text}</td>"
 
 
-def html_columns(cfg):
-    """(header, numeric sort, align left, cell function) for each column of the HTML table."""
+def html_columns(cfg, need=False):
+    """(header, numeric sort, align left, cell function) for each column of the HTML table.
+
+    need: add the Need column next to Fit (the category benchmark is there).
+    """
     t, f = cfg["board"], cfg["flags"]
     # Quality games: white at the middle of the gray band, full color one band width away
     q_mid = (f["good_quality_games"] + f["poor_quality_games"]) / 2
@@ -172,6 +177,8 @@ def html_columns(cfg):
         ("Flags", True, True, lambda r: td(*flags_cell(r))),
         # The page fills the Fit cells from your team. Δ finals breaks ties.
         ("Fit", True, False, lambda r: td("", v="-999", cls="fit")),
+        # Need: the fall in the sum of the category gaps if he joins your core. The page fills the cells.
+        *([("Need", True, False, lambda r: td("", v="-999", cls="need"))] if need else []),
         # Fit $ = $ x the started games that the player adds / the games of an average core player
         ("Fit $", True, False, lambda r: td("", v="-999", cls="fitd")),
         ("Team", False, True, lambda r: td(r.team)),
@@ -213,8 +220,8 @@ def row_open(r):
     return f'<tr data-team="{r.team}" data-pos="{r.pos}" data-s="{s}" data-q="{q}">'
 
 
-def html_table(df, cfg):
-    cols = html_columns(cfg)
+def html_table(df, cfg, need=False):
+    cols = html_columns(cfg, need)
     # Text alignment comes from the column list, so a new column does not need new CSS
     left = [i + 1 for i, (_, _, is_left, _) in enumerate(cols) if is_left]
     style = ", ".join(f".wrap th:nth-child({i}), .wrap td:nth-child({i})" for i in left) + " { text-align: left; }"
@@ -425,13 +432,16 @@ def positions(pos, slots):
     return [p for p in str(pos).split("/") if p in slots]
 
 
-def team_data(df, days, cfg):
+def team_data(df, days, cfg, benchmark=None):
     """The page data for the team builder (#8 Contracts): the config values, the playoff days and the players.
 
     days: the days of playoffs.playoff_schedule(), or None (no days). A player with no team gets team None.
+    benchmark: load_benchmark(), or None. With a benchmark, "category" is the category object and each player has wz.
+    Without one, "category" is None and the players have no wz.
     [team_builder] in config.toml is optional: core_max_rank 75 and weak_week_started 0 are the defaults.
     """
     tb, slots = cfg.get("team_builder", {}), cfg["league"]["slots"]
+    category, wz = category_data(df, cfg, benchmark)
     rests = df.get("rests_b2b", pd.Series(0, index=df.index)).fillna(0).astype(int)
     players = [{"id": int(r.player_id), "name": r.name, "team": None if getattr(r, "no_team", False) else r.team,
                 "pos": positions(r.pos, slots), "rank": int(r.rank), "value": round(float(r.value), 4),
@@ -439,12 +449,16 @@ def team_data(df, days, cfg):
                 "league_price": None if pd.isna(r.league_price) else int(round(r.league_price)),
                 "dollars": round(float(r.dollars), 2)}
                for r, rest in zip(df.itertuples(), rests)]
+    if wz is not None:
+        for player, row in zip(players, wz):
+            player["wz"] = row
     day_list = [] if days is None else [
         {"date": f"{d.date:%Y-%m-%d}", "week": d.week, "nba_games": int(d.nba_games), "quality": bool(d.quality),
          "teams": list(d.teams), "b2b": list(d.b2b)} for d in days.itertuples()]
     return {"slots": list(slots), "util": 1, "budget": cfg["auction"]["budget"], "spots": cfg["auction"]["spots"],
+            "keeper_prices": cfg.get("simulation", {}).get("keeper_prices", {}),
             "core_max_rank": tb.get("core_max_rank", 75), "weak_week_started": tb.get("weak_week_started", 0),
-            "weeks": weeks(cfg), "days": day_list, "players": players}
+            "weeks": weeks(cfg), "days": day_list, "players": players, "category": category}
 
 
 # The team engine (#8 Contracts): scoreCore(core, data) and fit(core, player, data).
@@ -475,15 +489,28 @@ def engine_js():
     return ENGINE.read_text(encoding="utf-8") if ENGINE.exists() else STUB_ENGINE
 
 
+# The category engine (#39): categoryGap(roster, data) and need(roster, candidate, data). The page inlines it
+# only when the page has the category benchmark.
+CATEGORY_ENGINE = Path(__file__).parent / "category_need.js"
+
+
+def category_panel():
+    """The category panel above the team table: one column for each category. The page fills the head and the rows."""
+    return ('<div class="cat-panel" aria-label="Category balance"><table id="cats" class="plain team-table">'
+            '<thead></thead><tbody></tbody></table>'
+            '<p id="cats-note" class="muted"></p></div>')
+
+
 def script_json(data):
     """JSON for a <script type="application/json"> block. "</" cannot close the block."""
     return json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
 
 
-def write_html(df, cfg, sim=None, days=None, page=MAIN_PAGE, windows=None):
+def write_html(df, cfg, sim=None, days=None, page=MAIN_PAGE, windows=None, benchmark=None):
     """sim: (combos, summary) from load_simulation(), or None if the auction simulator has not run.
 
     days: the days of playoffs.playoff_schedule() for the team builder, or None.
+    benchmark: load_benchmark(), or None. Without it, the page has no category panel and no Need column.
     page: the file to write in OUT. windows: (label, file) for each playoff window (pages()), or None.
     Each page keeps its own team in the browser.
     """
@@ -495,14 +522,19 @@ def write_html(df, cfg, sim=None, days=None, page=MAIN_PAGE, windows=None):
     else:
         tabs = tab_bar(list(sim[0].keeper.unique()), windows, page)
         combos = combo_panel(*sim, df, cfg)
+    data = team_data(df, days, cfg, benchmark)
+    has_category = data["category"] is not None
+    table = html_table(df, cfg, need=True) if has_category else html_table(df, cfg)
     store = "draft-board-team" if page == MAIN_PAGE else "draft-board-team-" + page.removesuffix(".html")
     html = (HTML.replace("__TITLE__", TITLE).replace("__NOTE__", note).replace("__FLAGS__", flags)
             .replace("__WEEKS__", ", ".join(weeks(cfg))).replace("__LOW__", str(t["low_games"]))
             .replace("__TABS__", tabs).replace("__COMBOS__", combos)
-            .replace("__FILTERS__", filter_bar(df)).replace("__BODY__", html_table(df, cfg))
+            .replace("__FILTERS__", filter_bar(df)).replace("__BODY__", table)
+            .replace("__CATEGORY__", category_panel() if has_category else "")
             .replace("__STORE__", json.dumps(store)).replace("__MAIN_PAGE__", json.dumps(MAIN_PAGE))
             # Last, so that no other placeholder can match text in the data or in the engine
-            .replace("__TEAM_DATA__", script_json(team_data(df, days, cfg))).replace("__ENGINE__", engine_js()))
+            .replace("__TEAM_DATA__", script_json(data)).replace("__ENGINE__", engine_js())
+            .replace("__CATEGORY_ENGINE__", CATEGORY_ENGINE.read_text(encoding="utf-8") if has_category else ""))
     (OUT / page).write_text(html, encoding="utf-8")
 
 
@@ -658,6 +690,10 @@ td.d.rest { color: var(--muted); }
 td.d.stream { color: var(--muted); }
 td.fit span { display: inline-block; padding: 0 4px; border-radius: 4px; }
 .g-bad { background: color-mix(in srgb, var(--bad) 35%, transparent); }
+.cat-panel { margin: 0 0 8px; }
+.cat-panel .muted { margin: 4px 0 0; font-size: 12px; }
+table.team-table td.cat { font-weight: 600; text-align: left; }
+td.need { cursor: default; }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -696,6 +732,7 @@ __TABS__
 <div class="team-head"><h2>My team</h2><span id="team-warn" class="warning"></span>
 <button type="button" data-act="reset" title="Clear your team and the taken players. The keeper stays.">Reset</button></div>
 <div id="budget" class="team-stats" aria-label="Budget and roster counts"></div>
+__CATEGORY__
 <div class="team-body"><div class="team-main">
 <div class="scroll"><table id="roster" class="plain team-table"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
 </div>
@@ -737,6 +774,10 @@ __ENGINE__
   return {scoreCore: module.exports.scoreCore || scoreCore, fit: module.exports.fit || fit,
           slotRoster: module.exports.slotRoster || slotRoster};
 })();
+</script>
+<script>
+// Category engine (#39): categoryGap(roster, data) and need(roster, candidate, data). Empty without a benchmark.
+__CATEGORY_ENGINE__
 </script>
 <script>
 // Search ignores case and accents, so "jokic" finds "Jokić"
@@ -898,11 +939,11 @@ const lastName = name => name.split(" ").slice(1).join(" ") || name;
 const money = v => v == null ? "—" : `$${Math.round(v)}`;
 const sameId = (a, b) => String(a) === String(b);
 
-// Your team: the keeper first (price = league_price, no ×), then the picks
+// Your team: the keeper first (price = keeper_prices, else league_price; no ×), then the picks
 function myTeam() {
   const k = keeper ? byName.get(keeper.value) : undefined;
   const rows = picks.filter(t => !k || !sameId(t.id, k.id)).map(t => ({...t, player: byId.get(String(t.id))}));
-  return k ? [{id: k.id, price: k.league_price ?? 0, core: keeperCore, keeper: true, player: k}, ...rows] : rows;
+  return k ? [{id: k.id, price: data.keeper_prices?.[k.name] ?? k.league_price ?? 0, core: keeperCore, keeper: true, player: k}, ...rows] : rows;
 }
 const isCore = t => t.core ?? t.player.rank <= data.core_max_rank;
 
@@ -929,7 +970,8 @@ function weekGames(p, quality) {
 }
 
 const boardRows = allRows.map(tr => ({tr, add: tr.querySelector("button.add"), take: tr.querySelector("button.take"),
-                                      fit: tr.querySelector("td.fit"), fitd: tr.querySelector("td.fitd")}));
+                                      fit: tr.querySelector("td.fit"), fitd: tr.querySelector("td.fitd"),
+                                      need: tr.querySelector("td.need")}));
 // The playoff games of an average core-quality player (rank <= core_max_rank), for Fit $
 const coreGames = (() => {
   const top = data.players.filter(p => p.rank <= data.core_max_rank && p.team);
@@ -937,6 +979,7 @@ const coreGames = (() => {
 })();
 const boardHeads = [...document.querySelectorAll("#board .wrap thead th")];
 const fitHead = boardHeads.find(th => th.textContent === "Fit");
+const needHead = boardHeads.find(th => th.textContent === "Need");
 // The Flags cell of a player in the team table: a copy of his board cell
 const rowById = new Map(boardRows.map(r => [r.add.dataset.id, r.tr]));
 const flagsIndex = boardHeads.findIndex(th => th.textContent === "Flags");
@@ -954,6 +997,7 @@ function render() {
   last = {core, result: engine.scoreCore(core, data)};
   renderHead(rows);
   renderTeam(rows);
+  renderCategory(rows);
   renderBoard(rows, core);
   applyFilters();
   fitLegend();
@@ -1117,7 +1161,8 @@ function share(got, all) {
 // The + and × buttons and the Fit column
 function renderBoard(rows, core) {
   const mine = new Set(rows.map(t => String(t.id))), full = rows.length >= data.spots;
-  boardRows.forEach(({tr, add, take, fit, fitd}) => {
+  const roster = needRoster(rows);
+  boardRows.forEach(({tr, add, take, fit, fitd, need: needCell}) => {
     const id = add.dataset.id, on = mine.has(id), gone = taken.has(id), p = byId.get(id);
     tr.classList.toggle("mine", on);
     tr.classList.toggle("taken", gone);
@@ -1126,6 +1171,7 @@ function renderBoard(rows, core) {
     take.disabled = on;
     take.textContent = gone ? "↺" : "×";
     take.title = on ? "On your team" : gone ? "Not taken (undo)" : "Taken by another team";
+    if (needCell) renderNeed(needCell, on || !p ? null : p, roster);
     if (!rows.length || on || !p) {
       tr.dataset.fit = tr.dataset.hole = "";
       fitd.textContent = "";
@@ -1152,8 +1198,59 @@ function renderBoard(rows, core) {
     fit.title = `Adds ${d.started} of his ${d.games} playoff games and ${d.quality_started} of his ${d.quality} quality games`
       + ` (${d.finals} in the finals). ${d.holes_removed} holes filled.`;
   });
-  // Keep the sort by Fit when the values change
-  if (fitHead.classList.contains("asc") || fitHead.classList.contains("desc")) sortTable(fitHead, fitHead.classList.contains("desc"));
+  // Keep the sort by Fit or Need when the values change
+  [fitHead, needHead].filter(Boolean).forEach(h => {
+    if (h.classList.contains("asc") || h.classList.contains("desc")) sortTable(h, h.classList.contains("desc"));
+  });
+}
+
+// The category panel and the Need column (#39). Weekly stat = (core_size x mean + std x wz / weight) x games_per_week.
+// A change of wz is std x wz / weight x games_per_week. The panel and the Need column exist only with a benchmark.
+const cat = data.category;
+const weekly = (c, wz) => (cat.core_size * cat.units[c].mean + cat.units[c].std * wz / cat.weights[c]) * cat.games_per_week;
+const weeklyDelta = (c, wz) => cat.units[c].std * wz / cat.weights[c] * cat.games_per_week;
+const statText = v => Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1);
+const signed = v => (v < 0 ? "−" : "+") + statText(Math.abs(v));
+const catLabel = c => c === "threes" ? "3PM" : c.toUpperCase();
+const pickPrice = p => Math.max(1, Math.round(p.league_price ?? 1));
+// The roster for the engine: the team table rows, with the price and the Core or Stream choice
+const needRoster = rows => cat ? rows.map(t => ({player: t.player, price: Number(t.price) || 0, core: isCore(t)})) : [];
+
+function renderCategory(rows) {
+  if (!cat) return;
+  const g = categoryGap(needRoster(rows), data);
+  const classes = {behind: "g-bad", even: "g-avg", ahead: "g-good"};
+  const row = (label, title, cell) => el("tr", {}, el("td", {className: "cat", textContent: label, title}), ...cat.cats.map(cell));
+  document.querySelector("#cats thead").replaceChildren(el("tr", {}, el("th", {className: "l"}),
+    ...cat.cats.map(c => el("th", {textContent: catLabel(c)}))));
+  document.querySelector("#cats tbody").replaceChildren(
+    row("Core", "Weekly stat of your core, with fillers in the empty core spots",
+      c => el("td", {textContent: statText(weekly(c, g.totals[c])), title: `Core total ${g.totals[c].toFixed(2)} weighted z`})),
+    row("Benchmark", "Weekly stat of the benchmark",
+      c => el("td", {textContent: statText(weekly(c, cat.benchmark[c])), title: `Benchmark ${cat.benchmark[c].toFixed(2)} weighted z`})),
+    row("Gap", "Your core minus the benchmark. Red = behind, gray = even, green = ahead. A minus sign means you are below the benchmark.",
+      c => el("td", {className: classes[g.labels[c]], textContent: signed(weeklyDelta(c, g.totals[c] - cat.benchmark[c])),
+        title: `${g.labels[c]}. Gap ${g.gaps[c].toFixed(2)} weighted z. Even band ${cat.bands[c].toFixed(2)} weighted z.`})));
+  document.getElementById("cats-note").textContent = "Weekly stats of your core. Each empty core spot counts as a filler"
+    + (g.filler_price == null ? "." : ` at $${Math.max(cat.min_bid, Math.round(g.filler_price))}.`) + " Even = within the band of the benchmark.";
+}
+
+// The Need cell of a candidate: the fall in the sum of the gaps if he joins your core at his League $ (in weighted z).
+// The title shows the gaps that remain in weekly stats.
+function renderNeed(cell, p, roster) {
+  cell.removeAttribute("style");
+  cell.removeAttribute("title");
+  if (!p) {
+    cell.textContent = "";
+    cell.dataset.v = -999;
+    return;
+  }
+  const r = need(roster, {player: p, price: pickPrice(p)}, data), left = cat.cats.filter(c => r.gaps_after[c] > 0);
+  cell.textContent = (r.need < 0 ? "−" : "+") + Math.abs(r.need).toFixed(2);
+  cell.dataset.v = r.need.toFixed(3);
+  cell.title = `Need ${r.need.toFixed(2)} weighted z at $${pickPrice(p)}. Gaps after: `
+    + (left.length ? left.map(c => `${catLabel(c)} ${statText(weeklyDelta(c, r.gaps_after[c]))}`).join(", ") : "none") + " a week.";
+  cell.style.background = `color-mix(in srgb, var(${r.need >= 0 ? "--good" : "--bad"}) ${Math.min(Math.abs(r.need) / 1.5, 1) * 55}%, transparent)`;
 }
 
 function addPlayer(id) {
@@ -1161,7 +1258,7 @@ function addPlayer(id) {
   if (!p || rows.length >= data.spots || rows.some(t => sameId(t.id, id))) return;
   taken.delete(String(id));
   // The first price is League $ (at least $1). Change it in the price box.
-  picks.push({id: p.id, price: Math.max(1, Math.round(p.league_price ?? 1)), core: null});
+  picks.push({id: p.id, price: pickPrice(p), core: null});
   render();
 }
 document.addEventListener("click", e => {
@@ -1222,6 +1319,7 @@ def load_simulation(df):
 
 def main():
     cfgs = windows(load_config())
+    benchmark = load_benchmark()
     files, schedule = pages(cfgs), read_schedule()
     for i, cfg in enumerate(cfgs):
         df, sim = load(cfg), None
@@ -1229,7 +1327,7 @@ def main():
         if i == 0:
             df, sim = load_simulation(df)
             write_markdown(df, cfg)
-        write_html(df, cfg, sim, playoff_schedule(schedule, cfg)[1], files[i][1], files)
+        write_html(df, cfg, sim, playoff_schedule(schedule, cfg)[1], files[i][1], files, benchmark)
     print(f"Wrote {len(df)} players to draft_board.md and " + ", ".join(f for _, f in files))
 
 
