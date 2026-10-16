@@ -495,13 +495,9 @@ CATEGORY_ENGINE = Path(__file__).parent / "category_need.js"
 
 
 def category_panel():
-    """The category panel above the team table. The page fills the rows."""
+    """The category panel above the team table: one column for each category. The page fills the head and the rows."""
     return ('<div class="cat-panel" aria-label="Category balance"><table id="cats" class="plain team-table">'
-            '<thead><tr><th class="l">Category</th>'
-            '<th title="Weekly stat of your core, with fillers in the empty core spots">Core</th>'
-            '<th title="Weekly stat of the benchmark">Benchmark</th>'
-            '<th title="Your core minus the benchmark. A minus sign means you are behind.">Gap</th>'
-            '<th class="l"></th></tr></thead><tbody></tbody></table>'
+            '<thead></thead><tbody></tbody></table>'
             '<p id="cats-note" class="muted"></p></div>')
 
 
@@ -1224,15 +1220,17 @@ function renderCategory(rows) {
   if (!cat) return;
   const g = categoryGap(needRoster(rows), data);
   const classes = {behind: "g-bad", even: "g-avg", ahead: "g-good"};
-  document.querySelector("#cats tbody").replaceChildren(...cat.cats.map(c => {
-    const total = g.totals[c], bench = cat.benchmark[c];
-    return el("tr", {}, el("td", {className: "cat", textContent: catLabel(c)}),
-      el("td", {textContent: statText(weekly(c, total)), title: `Core total ${total.toFixed(2)} weighted z`}),
-      el("td", {textContent: statText(weekly(c, bench)), title: `Benchmark ${bench.toFixed(2)} weighted z`}),
-      el("td", {textContent: signed(weeklyDelta(c, total - bench)),
-        title: `Gap ${g.gaps[c].toFixed(2)} weighted z. Even band ${cat.bands[c].toFixed(2)} weighted z.`}),
-      el("td", {className: "l " + classes[g.labels[c]], textContent: g.labels[c]}));
-  }));
+  const row = (label, title, cell) => el("tr", {}, el("td", {className: "cat", textContent: label, title}), ...cat.cats.map(cell));
+  document.querySelector("#cats thead").replaceChildren(el("tr", {}, el("th", {className: "l"}),
+    ...cat.cats.map(c => el("th", {textContent: catLabel(c)}))));
+  document.querySelector("#cats tbody").replaceChildren(
+    row("Core", "Weekly stat of your core, with fillers in the empty core spots",
+      c => el("td", {textContent: statText(weekly(c, g.totals[c])), title: `Core total ${g.totals[c].toFixed(2)} weighted z`})),
+    row("Benchmark", "Weekly stat of the benchmark",
+      c => el("td", {textContent: statText(weekly(c, cat.benchmark[c])), title: `Benchmark ${cat.benchmark[c].toFixed(2)} weighted z`})),
+    row("Gap", "Your core minus the benchmark. Red = behind, gray = even, green = ahead. A minus sign means you are below the benchmark.",
+      c => el("td", {className: classes[g.labels[c]], textContent: signed(weeklyDelta(c, g.totals[c] - cat.benchmark[c])),
+        title: `${g.labels[c]}. Gap ${g.gaps[c].toFixed(2)} weighted z. Even band ${cat.bands[c].toFixed(2)} weighted z.`})));
   document.getElementById("cats-note").textContent = "Weekly stats of your core. Each empty core spot counts as a filler"
     + (g.filler_price == null ? "." : ` at $${Math.max(cat.min_bid, Math.round(g.filler_price))}.`) + " Even = within the band of the benchmark.";
 }
